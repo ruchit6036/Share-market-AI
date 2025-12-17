@@ -3,4 +3,7 @@ yfinance
 pandas
 pandas_ta
 numpy
+plotly
 scipy
+requests
+openpyxl
