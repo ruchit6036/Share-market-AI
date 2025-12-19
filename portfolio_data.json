@@ -16,5 +16,11 @@
         "buy_price": 91.9,
         "category": "\ud83c\udf0a Trend",
         "date": "19/12/2025"
+    },
+    "SMSPHARMA.NS": {
+        "qty": 200,
+        "buy_price": 308.45,
+        "category": "\ud83e\udd48 Double",
+        "date": "19/12/2025"
     }
 }
