@@ -9,17 +9,10 @@ import json
 import time
 import requests
 from datetime import datetime
-from github import Github # <-- Nayi Library
+from github import Github
 
 # --- CONFIG ---
-st.set_page_config(page_title="Market AI Cloud", layout="wide", page_icon="☁️")
-
-# ==========================================
-# 👇 TELEGRAM SETTINGS 👇
-# ==========================================
-MY_BOT_TOKEN = "8503524657:AAHNYtJkcaZMISZ8O8yWgmmQ1B5hULvMst4"
-MY_CHAT_ID = "5914005185"
-# ==========================================
+st.set_page_config(page_title="Market AI Parts + Cloud", layout="wide", page_icon="🧩")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -29,43 +22,66 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CLOUD STORAGE SYSTEM (GitHub) ☁️ ---
+# ==========================================
+# 👇 TELEGRAM SETTINGS 👇
+# ==========================================
+MY_BOT_TOKEN = "8503524657:AAHNYtJkcaZMISZ8O8yWgmmQ1B5hULvMst4"
+MY_CHAT_ID = "5914005185"
+# ==========================================
+
+# --- CLOUD STORAGE SYSTEM (DEBUG MODE) ☁️ ---
 PORTFOLIO_FILE = "portfolio_data.json"
 
 def get_github_repo():
+    if "GITHUB_TOKEN" not in st.secrets:
+        st.error("❌ Error: 'GITHUB_TOKEN' Secrets mein nahi mila!")
+        return None
+    if "REPO_NAME" not in st.secrets:
+        st.error("❌ Error: 'REPO_NAME' Secrets mein nahi mila!")
+        return None
+        
+    token = st.secrets["GITHUB_TOKEN"]
+    repo_name = st.secrets["REPO_NAME"]
+    
     try:
-        token = st.secrets["GITHUB_TOKEN"]
-        repo_name = st.secrets["REPO_NAME"]
         g = Github(token)
-        return g.get_repo(repo_name)
-    except: return None
+        user = g.get_user()
+        try:
+            st.sidebar.success(f"✅ Cloud Active: {user.login}")
+        except:
+            st.error(f"❌ Error: Token galat hai!")
+            return None
+        repo = g.get_repo(repo_name)
+        return repo
+    except Exception as e:
+        st.error(f"❌ Repo Error: {e}")
+        return None
 
 def load_portfolio_cloud():
+    repo = get_github_repo()
+    if not repo: return {}
     try:
-        repo = get_github_repo()
-        if not repo: return {}
-        try:
-            content = repo.get_contents(PORTFOLIO_FILE)
-            return json.loads(content.decoded_content.decode())
-        except: 
-            return {} # File nahi mili to khali return karo
-    except: return {}
+        content = repo.get_contents(PORTFOLIO_FILE)
+        data = json.loads(content.decoded_content.decode())
+        return data
+    except: 
+        return {}
 
 def save_portfolio_cloud(data):
+    repo = get_github_repo()
+    if not repo: return
+    
+    json_str = json.dumps(data, indent=4)
     try:
-        repo = get_github_repo()
-        if not repo: return
-        
-        json_str = json.dumps(data, indent=4)
         try:
-            # Update existing file
             contents = repo.get_contents(PORTFOLIO_FILE)
             repo.update_file(contents.path, "Update Portfolio", json_str, contents.sha)
+            st.toast("✅ Saved to Cloud!")
         except:
-            # Create new file if not exists
             repo.create_file(PORTFOLIO_FILE, "Create Portfolio", json_str)
+            st.toast("✅ New File Created on Cloud!")
     except Exception as e:
-        st.error(f"Save Error: {e}")
+        st.error(f"❌ Save Error: {e}")
 
 # --- TELEGRAM SENDER ---
 def send_telegram_msg(message):
@@ -76,9 +92,9 @@ def send_telegram_msg(message):
             requests.get(url, params=params)
         except: pass
 
-# --- STOCK LIST ---
+# --- STOCK LIST (Divided Logic ke liye Full List) ---
 FULL_STOCK_LIST = [
-    # Part 1 (Large)
+    # --- PART 1 STOCKS ---
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS",
     "TATAMOTORS.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS", "ULTRACEMCO.NS", "ADANIENT.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "KOTAKBANK.NS",
     "WIPRO.NS", "HCLTECH.NS", "TATASTEEL.NS", "POWERGRID.NS", "NTPC.NS", "ONGC.NS", "M&M.NS", "COALINDIA.NS", "JSWSTEEL.NS", "BPCL.NS",
@@ -91,7 +107,8 @@ FULL_STOCK_LIST = [
     "APOLLOHOSP.NS", "JUBLFOOD.NS", "DEVYANI.NS", "PIIND.NS", "UPL.NS", "SRF.NS", "NAVINFLUOR.NS", "AARTIIND.NS", "DEEPAKNTR.NS",
     "ATGL.NS", "ADANIGREEN.NS", "ADANIPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "TORNTPOWER.NS", "PFC.NS",
     "RECLTD.NS", "IOB.NS", "UNIONBANK.NS", "INDIANB.NS", "UCOBANK.NS", "MAHABANK.NS", "CENTRALBK.NS", "PSB.NS", "SBICARD.NS",
-    # Part 2 (Mid)
+    
+    # --- PART 2 STOCKS ---
     "BAJAJHLDNG.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS", "LICI.NS", "GICRE.NS", "NIACL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS",
     "M&MFIN.NS", "SHRIRAMFIN.NS", "SUNDARMFIN.NS", "POONAWALLA.NS", "ABCAPITAL.NS", "L&TFH.NS", "PEL.NS", "DELHIVERY.NS", "NYKAA.NS",
     "POLICYBZR.NS", "IDEA.NS", "INDUSTOWER.NS", "TATACOMM.NS", "PERSISTENT.NS", "LTIM.NS", "KPITTECH.NS", "COFORGE.NS", "MPHASIS.NS",
@@ -104,7 +121,8 @@ FULL_STOCK_LIST = [
     "LINDEINDIA.NS", "SOLARINDS.NS", "CASTROLIND.NS", "OIL.NS", "PETRONET.NS", "GSPL.NS", "IGL.NS", "MGL.NS", "GUJGASLTD.NS",
     "GAIL.NS", "HINDPETRO.NS", "IOC.NS", "MRPL.NS", "CHENNPETRO.NS", "CUMMINSIND.NS", "THERMAX.NS", "SKFINDIA.NS", "TIMKEN.NS",
     "SCHAEFFLER.NS", "AIAENG.NS", "ELGIEQUIP.NS", "KIRLOSENG.NS", "SUZLON.NS", "INOXWIND.NS", "BEML.NS", "MAZDOCK.NS", "COCHINSHIP.NS",
-    # Part 3 (Small/Others)
+    
+    # --- PART 3 STOCKS ---
     "GRSE.NS", "BDL.NS", "ASTRAMICRO.NS", "MTARTECH.NS", "DATAPATTNS.NS", "LALPATHLAB.NS", "METROPOLIS.NS", "SYNGENE.NS", "VIJAYA.NS",
     "KIMS.NS", "RAINBOW.NS", "MEDANTA.NS", "ASTERDM.NS", "NH.NS", "FORTIS.NS", "GLENMARK.NS", "IPCALAB.NS", "JBCHEPHARM.NS",
     "AJANTPHARM.NS", "NATCOPHARM.NS", "PFIZER.NS", "SANOFI.NS", "ABBOTINDIA.NS", "GLAXO.NS", "ASTRAZEN.NS", "ERIS.NS", "GRANULES.NS",
@@ -220,23 +238,28 @@ def analyze_stock_safe(symbol):
     except: return None
 
 # --- UI ---
-st.title("🚀 Market AI: Cloud Edition")
+st.title("🚀 Market AI: Parts + Cloud")
 
 # --- SIDEBAR: SETTINGS ---
 st.sidebar.header("🕹️ Scan Settings")
+
+# 1. SCAN SOURCE (STRICT LOGIC HERE)
 scan_source = st.sidebar.radio("Select Source:", ["Part 1 (Large Cap)", "Part 2 (Mid Cap)", "Part 3 (Small Cap)", "📂 Upload Custom File"])
 
 tickers = []
-chunk_size = len(FULL_STOCK_LIST) // 3
+total_len = len(FULL_STOCK_LIST)
+chunk_size = total_len // 3
+
+# === LOGIC: SPLITTING THE LIST ===
 if scan_source == "Part 1 (Large Cap)":
     tickers = FULL_STOCK_LIST[:chunk_size]
-    st.sidebar.caption(f"Stocks: 1 - {chunk_size}")
+    st.sidebar.caption(f"Scanning 1 to {chunk_size}")
 elif scan_source == "Part 2 (Mid Cap)":
     tickers = FULL_STOCK_LIST[chunk_size : chunk_size*2]
-    st.sidebar.caption(f"Stocks: {chunk_size} - {chunk_size*2}")
+    st.sidebar.caption(f"Scanning {chunk_size} to {chunk_size*2}")
 elif scan_source == "Part 3 (Small Cap)":
     tickers = FULL_STOCK_LIST[chunk_size*2 :]
-    st.sidebar.caption(f"Stocks: {chunk_size*2} - End")
+    st.sidebar.caption(f"Scanning {chunk_size*2} to End")
 elif scan_source == "📂 Upload Custom File":
     csv_file = st.sidebar.file_uploader("Upload CSV/Excel", type=["csv", "xlsx"])
     if csv_file:
@@ -258,7 +281,7 @@ if st.session_state['my_portfolio']:
 up = st.sidebar.file_uploader("📤 Restore", type=["json"])
 if up: 
     st.session_state['my_portfolio'] = json.load(up)
-    save_portfolio_cloud(st.session_state['my_portfolio']) # Sync with cloud
+    save_portfolio_cloud(st.session_state['my_portfolio'])
 
 # --- SCANNER ---
 if st.button("🚀 START SCAN") or auto_run:
