@@ -28,5 +28,11 @@
         "buy_price": 7914.0,
         "category": "\ud83e\udd48 Double",
         "date": "19/12/2025"
+    },
+    "SAFARI.NS": {
+        "qty": 50,
+        "buy_price": 2197.6,
+        "category": "\u2728 Bull",
+        "date": "19/12/2025"
     }
 }
