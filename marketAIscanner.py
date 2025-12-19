@@ -8,11 +8,11 @@ import plotly.graph_objects as go
 import json
 import time
 import requests
-import os
 from datetime import datetime
+from github import Github # <-- Nayi Library
 
 # --- CONFIG ---
-st.set_page_config(page_title="Market AI Permanent", layout="wide", page_icon="💾")
+st.set_page_config(page_title="Market AI Cloud", layout="wide", page_icon="☁️")
 
 # ==========================================
 # 👇 TELEGRAM SETTINGS 👇
@@ -26,26 +26,46 @@ st.markdown("""
     <style>
     .stButton>button {width: 100%; border-radius: 5px; font-weight: bold;}
     div[data-testid="stExpander"] {border: 1px solid #ddd; border-radius: 5px;}
-    .big-font {font-size:20px !important; font-weight: bold;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- PERMANENT MEMORY SYSTEM (Auto-Save) 💾 ---
+# --- CLOUD STORAGE SYSTEM (GitHub) ☁️ ---
 PORTFOLIO_FILE = "portfolio_data.json"
 
-def load_portfolio_from_file():
-    if os.path.exists(PORTFOLIO_FILE):
-        try:
-            with open(PORTFOLIO_FILE, "r") as f:
-                return json.load(f)
-        except: return {}
-    return {}
-
-def save_portfolio_to_file(data):
+def get_github_repo():
     try:
-        with open(PORTFOLIO_FILE, "w") as f:
-            json.dump(data, f)
-    except: pass
+        token = st.secrets["GITHUB_TOKEN"]
+        repo_name = st.secrets["REPO_NAME"]
+        g = Github(token)
+        return g.get_repo(repo_name)
+    except: return None
+
+def load_portfolio_cloud():
+    try:
+        repo = get_github_repo()
+        if not repo: return {}
+        try:
+            content = repo.get_contents(PORTFOLIO_FILE)
+            return json.loads(content.decoded_content.decode())
+        except: 
+            return {} # File nahi mili to khali return karo
+    except: return {}
+
+def save_portfolio_cloud(data):
+    try:
+        repo = get_github_repo()
+        if not repo: return
+        
+        json_str = json.dumps(data, indent=4)
+        try:
+            # Update existing file
+            contents = repo.get_contents(PORTFOLIO_FILE)
+            repo.update_file(contents.path, "Update Portfolio", json_str, contents.sha)
+        except:
+            # Create new file if not exists
+            repo.create_file(PORTFOLIO_FILE, "Create Portfolio", json_str)
+    except Exception as e:
+        st.error(f"Save Error: {e}")
 
 # --- TELEGRAM SENDER ---
 def send_telegram_msg(message):
@@ -71,7 +91,6 @@ FULL_STOCK_LIST = [
     "APOLLOHOSP.NS", "JUBLFOOD.NS", "DEVYANI.NS", "PIIND.NS", "UPL.NS", "SRF.NS", "NAVINFLUOR.NS", "AARTIIND.NS", "DEEPAKNTR.NS",
     "ATGL.NS", "ADANIGREEN.NS", "ADANIPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "TORNTPOWER.NS", "PFC.NS",
     "RECLTD.NS", "IOB.NS", "UNIONBANK.NS", "INDIANB.NS", "UCOBANK.NS", "MAHABANK.NS", "CENTRALBK.NS", "PSB.NS", "SBICARD.NS",
-    
     # Part 2 (Mid)
     "BAJAJHLDNG.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS", "LICI.NS", "GICRE.NS", "NIACL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS",
     "M&MFIN.NS", "SHRIRAMFIN.NS", "SUNDARMFIN.NS", "POONAWALLA.NS", "ABCAPITAL.NS", "L&TFH.NS", "PEL.NS", "DELHIVERY.NS", "NYKAA.NS",
@@ -85,7 +104,6 @@ FULL_STOCK_LIST = [
     "LINDEINDIA.NS", "SOLARINDS.NS", "CASTROLIND.NS", "OIL.NS", "PETRONET.NS", "GSPL.NS", "IGL.NS", "MGL.NS", "GUJGASLTD.NS",
     "GAIL.NS", "HINDPETRO.NS", "IOC.NS", "MRPL.NS", "CHENNPETRO.NS", "CUMMINSIND.NS", "THERMAX.NS", "SKFINDIA.NS", "TIMKEN.NS",
     "SCHAEFFLER.NS", "AIAENG.NS", "ELGIEQUIP.NS", "KIRLOSENG.NS", "SUZLON.NS", "INOXWIND.NS", "BEML.NS", "MAZDOCK.NS", "COCHINSHIP.NS",
-    
     # Part 3 (Small/Others)
     "GRSE.NS", "BDL.NS", "ASTRAMICRO.NS", "MTARTECH.NS", "DATAPATTNS.NS", "LALPATHLAB.NS", "METROPOLIS.NS", "SYNGENE.NS", "VIJAYA.NS",
     "KIMS.NS", "RAINBOW.NS", "MEDANTA.NS", "ASTERDM.NS", "NH.NS", "FORTIS.NS", "GLENMARK.NS", "IPCALAB.NS", "JBCHEPHARM.NS",
@@ -102,21 +120,20 @@ FULL_STOCK_LIST = [
     "SIRCA.NS", "SHALPAINTS.NS", "GARFIBRES.NS", "LUXIND.NS", "RUPA.NS", "DOLLAR.NS", "TCNSBRANDS.NS", "GOKEX.NS", "SWANENERGY.NS"
 ]
 
-# --- DATA MANAGER (AUTO LOAD/SAVE) 💾 ---
-# Yahan hum check karte hain ki file hai ya nahi
+# --- DATA MANAGER (Cloud Sync) ☁️ ---
 if 'my_portfolio' not in st.session_state:
-    st.session_state['my_portfolio'] = load_portfolio_from_file()
+    with st.spinner("Connecting to Cloud..."):
+        st.session_state['my_portfolio'] = load_portfolio_cloud()
 
 if 'sent_alerts' not in st.session_state: st.session_state['sent_alerts'] = []
 
 def add_to_portfolio(symbol, qty, price, category):
     today_date = datetime.now().strftime("%d/%m/%Y")
-    # Data pehle variable mein update karo
     st.session_state['my_portfolio'][symbol] = {
         "qty": int(qty), "buy_price": float(price), "category": category, "date": today_date
     }
-    # Phir turant FILE mein save karo (Permanent)
-    save_portfolio_to_file(st.session_state['my_portfolio'])
+    # Save to Cloud immediately
+    save_portfolio_cloud(st.session_state['my_portfolio'])
 
 # --- CHART ENGINE ---
 def plot_chart_with_patterns(symbol, min_idx, max_idx, df):
@@ -203,7 +220,7 @@ def analyze_stock_safe(symbol):
     except: return None
 
 # --- UI ---
-st.title("🚀 Market AI: Permanent Edition")
+st.title("🚀 Market AI: Cloud Edition")
 
 # --- SIDEBAR: SETTINGS ---
 st.sidebar.header("🕹️ Scan Settings")
@@ -237,11 +254,11 @@ st.sidebar.markdown("---")
 st.sidebar.header("💾 Backup")
 if st.session_state['my_portfolio']:
     portfolio_json = json.dumps(st.session_state['my_portfolio'], default=str)
-    st.sidebar.download_button("📥 Download", portfolio_json, "my_portfolio_permanent.json", "application/json")
+    st.sidebar.download_button("📥 Download", portfolio_json, "my_portfolio_cloud.json", "application/json")
 up = st.sidebar.file_uploader("📤 Restore", type=["json"])
 if up: 
     st.session_state['my_portfolio'] = json.load(up)
-    save_portfolio_to_file(st.session_state['my_portfolio']) # Restore hone par bhi save kar lo
+    save_portfolio_cloud(st.session_state['my_portfolio']) # Sync with cloud
 
 # --- SCANNER ---
 if st.button("🚀 START SCAN") or auto_run:
