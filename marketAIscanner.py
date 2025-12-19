@@ -12,10 +12,10 @@ import os
 from datetime import datetime
 
 # --- CONFIG ---
-st.set_page_config(page_title="Market AI Error Fixed", layout="wide", page_icon="✅")
+st.set_page_config(page_title="Market AI Permanent", layout="wide", page_icon="💾")
 
 # ==========================================
-# 👇 TELEGRAM SETTINGS (FIXED) 👇
+# 👇 TELEGRAM SETTINGS 👇
 # ==========================================
 MY_BOT_TOKEN = "8503524657:AAHNYtJkcaZMISZ8O8yWgmmQ1B5hULvMst4"
 MY_CHAT_ID = "5914005185"
@@ -29,6 +29,23 @@ st.markdown("""
     .big-font {font-size:20px !important; font-weight: bold;}
     </style>
     """, unsafe_allow_html=True)
+
+# --- PERMANENT MEMORY SYSTEM (Auto-Save) 💾 ---
+PORTFOLIO_FILE = "portfolio_data.json"
+
+def load_portfolio_from_file():
+    if os.path.exists(PORTFOLIO_FILE):
+        try:
+            with open(PORTFOLIO_FILE, "r") as f:
+                return json.load(f)
+        except: return {}
+    return {}
+
+def save_portfolio_to_file(data):
+    try:
+        with open(PORTFOLIO_FILE, "w") as f:
+            json.dump(data, f)
+    except: pass
 
 # --- TELEGRAM SENDER ---
 def send_telegram_msg(message):
@@ -85,15 +102,21 @@ FULL_STOCK_LIST = [
     "SIRCA.NS", "SHALPAINTS.NS", "GARFIBRES.NS", "LUXIND.NS", "RUPA.NS", "DOLLAR.NS", "TCNSBRANDS.NS", "GOKEX.NS", "SWANENERGY.NS"
 ]
 
-# --- DATA MANAGER 💾 ---
-if 'my_portfolio' not in st.session_state: st.session_state['my_portfolio'] = {}
+# --- DATA MANAGER (AUTO LOAD/SAVE) 💾 ---
+# Yahan hum check karte hain ki file hai ya nahi
+if 'my_portfolio' not in st.session_state:
+    st.session_state['my_portfolio'] = load_portfolio_from_file()
+
 if 'sent_alerts' not in st.session_state: st.session_state['sent_alerts'] = []
 
 def add_to_portfolio(symbol, qty, price, category):
     today_date = datetime.now().strftime("%d/%m/%Y")
+    # Data pehle variable mein update karo
     st.session_state['my_portfolio'][symbol] = {
         "qty": int(qty), "buy_price": float(price), "category": category, "date": today_date
     }
+    # Phir turant FILE mein save karo (Permanent)
+    save_portfolio_to_file(st.session_state['my_portfolio'])
 
 # --- CHART ENGINE ---
 def plot_chart_with_patterns(symbol, min_idx, max_idx, df):
@@ -180,7 +203,7 @@ def analyze_stock_safe(symbol):
     except: return None
 
 # --- UI ---
-st.title("🚀 Market AI: Complete Edition")
+st.title("🚀 Market AI: Permanent Edition")
 
 # --- SIDEBAR: SETTINGS ---
 st.sidebar.header("🕹️ Scan Settings")
@@ -214,9 +237,11 @@ st.sidebar.markdown("---")
 st.sidebar.header("💾 Backup")
 if st.session_state['my_portfolio']:
     portfolio_json = json.dumps(st.session_state['my_portfolio'], default=str)
-    st.sidebar.download_button("📥 Download", portfolio_json, "my_portfolio_final.json", "application/json")
+    st.sidebar.download_button("📥 Download", portfolio_json, "my_portfolio_permanent.json", "application/json")
 up = st.sidebar.file_uploader("📤 Restore", type=["json"])
-if up: st.session_state['my_portfolio'] = json.load(up)
+if up: 
+    st.session_state['my_portfolio'] = json.load(up)
+    save_portfolio_to_file(st.session_state['my_portfolio']) # Restore hone par bhi save kar lo
 
 # --- SCANNER ---
 if st.button("🚀 START SCAN") or auto_run:
@@ -262,14 +287,13 @@ if 'scan_data' in st.session_state:
             if not lst: st.info("No stocks matched.")
             else:
                 df_view = pd.DataFrame(lst)
-                # ERROR FIX: Added 'key' argument to st.dataframe
                 event = st.dataframe(
                     df_view[["Symbol", "Price", "Change", "Shape_Bull", "Shape_Bear"]], 
                     use_container_width=True, 
                     hide_index=True, 
                     on_select="rerun", 
                     selection_mode="single-row",
-                    key=f"df_{name}"  # <--- Unique ID for each table (FIXED)
+                    key=f"df_{name}"
                 )
                 if len(event.selection.rows) > 0:
                     idx = event.selection.rows[0]; sel_sym = df_view.iloc[idx]['Symbol']
