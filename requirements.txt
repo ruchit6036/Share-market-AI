@@ -7,3 +7,4 @@ plotly
 scipy
 requests
 openpyxl
+PyGithub
