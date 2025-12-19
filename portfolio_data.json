@@ -10,5 +10,11 @@
         "buy_price": 2254.2,
         "category": "\ud83e\udd48 Double",
         "date": "19/12/2025"
+    },
+    "CUBEXTUB.NS": {
+        "qty": 1000,
+        "buy_price": 91.9,
+        "category": "\ud83c\udf0a Trend",
+        "date": "19/12/2025"
     }
 }
