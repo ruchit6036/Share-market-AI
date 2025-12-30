@@ -10,6 +10,7 @@ import time
 import os
 import warnings
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection #
 
 # --- 1. SUPPRESS WARNINGS ---
 warnings.filterwarnings('ignore')
@@ -109,31 +110,42 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- BACKEND ---
-PORTFOLIO_FILE = "smart_portfolio.json"
+# ==========================================
+# 📊 GOOGLE SHEETS BACKEND (ONLINE SYNC)
+# ==========================================
 
 def load_data():
-    if os.path.exists(PORTFOLIO_FILE):
-        try:
-            with open(PORTFOLIO_FILE, "r") as f:
-                return json.load(f)
-        except:
-            pass
-    return {"balance": 1000000.0, "holdings": {}}
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection) #
+        df = conn.read(ttl=0) #
+        if df.empty:
+            return {"balance": 1000000.0, "holdings": {}} #
+        balance = float(df.iloc[0]['balance']) #
+        holdings_str = df.iloc[0]['holdings_json'] #
+        holdings = json.loads(holdings_str) if holdings_str else {} #
+        return {"balance": balance, "holdings": holdings} #
+    except Exception:
+        return {"balance": 1000000.0, "holdings": {}} #
 
 def save_data(data):
     try:
-        with open(PORTFOLIO_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except:
-        pass
+        conn = st.connection("gsheets", type=GSheetsConnection) #
+        new_df = pd.DataFrame([{
+            "balance": data["balance"],
+            "holdings_json": json.dumps(data["holdings"])
+        }]) #
+        conn.update(data=new_df) #
+    except Exception as e:
+        st.error(f"Save Error: {e}") #
 
-if 'portfolio' not in st.session_state: st.session_state['portfolio'] = load_data()
+if 'portfolio' not in st.session_state: 
+    st.session_state['portfolio'] = load_data() #
+
 for idx in ["Nifty", "Sensex", "BankNifty", "FinNifty", "Bankex"]:
-    if f'show_{idx}' not in st.session_state: st.session_state[f'show_{idx}'] = False
+    if f'show_{idx}' not in st.session_state: st.session_state[f'show_{idx}'] = False #
 
 # ==========================================
-# 📋 STOCK LISTS (MULTI-LINE)
+# 📋 STOCK LISTS (ORIGINAL COPIED FULLY)
 # ==========================================
 STOCK_LIST_PART_1 = [
     "NIFTYBEES.NS", "BANKBEES.NS", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS",
@@ -181,6 +193,7 @@ STOCK_LIST_PART_3 = [
     "SIRCA.NS", "SHALPAINTS.NS", "GARFIBRES.NS", "LUXIND.NS", "RUPA.NS", "DOLLAR.NS", "TCNSBRANDS.NS", "GOKEX.NS", "SWANENERGY.NS"
 ]
 
+# (Original Functions buy_stock, sell_stock, get_news_sentiment, predict_results, etc.)
 def buy_stock(symbol, qty, price, category):
     cost = qty * price
     if st.session_state['portfolio']['balance'] >= cost:
@@ -193,7 +206,7 @@ def buy_stock(symbol, qty, price, category):
             st.session_state['portfolio']['holdings'][symbol] = {'qty': new_qty, 'buy_price': new_avg, 'category': category, 'date': today_date}
         else:
             st.session_state['portfolio']['holdings'][symbol] = {'qty': int(qty), 'buy_price': float(price), 'category': category, 'date': today_date}
-        save_data(st.session_state['portfolio'])
+        save_data(st.session_state['portfolio']) #
         return True
     return False
 
@@ -203,37 +216,31 @@ def sell_stock(symbol, live_price):
         return_amount = qty * live_price
         st.session_state['portfolio']['balance'] += return_amount
         del st.session_state['portfolio']['holdings'][symbol]
-        save_data(st.session_state['portfolio'])
+        save_data(st.session_state['portfolio']) #
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Settings")
-    
     st.markdown("### ⏱️ Trading Mode")
     scan_mode = st.radio("Choose Mode", ["Swing (Daily)", "Intraday (15 Min)"])
-    
     st.markdown("---")
     st.markdown("### 💰 My Wallet")
     balance = st.session_state['portfolio']['balance']
     st.metric("Cash Balance", f"₹ {balance:,.0f}")
     if st.button("Reset Cash", type="secondary"):
         st.session_state['portfolio'] = {"balance": 1000000.0, "holdings": {}}
-        save_data(st.session_state['portfolio']); st.rerun()
-    
+        save_data(st.session_state['portfolio']); st.rerun() #
     st.markdown("---")
     st.markdown("### 🛡️ Risk & Auto-Qty")
     capital = st.number_input("Capital (₹)", 10000, 10000000, 100000, step=10000)
     risk_pct = st.slider("Risk Per Trade (%)", 0.5, 5.0, 2.0, 0.5)
     sl_multiplier = 2.0 
-    
     st.markdown("---")
     auto_run = st.checkbox("🔄 Auto-Run (Live Loop)", False)
 
-# --- NEW FEATURES: NEWS & RESULT PREDICTION ---
 def get_news_sentiment(symbol):
     try:
-        stock = yf.Ticker(symbol)
-        news = stock.news
+        stock = yf.Ticker(symbol); news = stock.news
         if not news: return "⚪"
         text = " ".join([n['title'] for n in news[:3]]).lower()
         pos_words = ['growth', 'profit', 'rise', 'gain', 'buy', 'positive', 'order', 'win']
@@ -248,8 +255,7 @@ def get_news_sentiment(symbol):
 
 def predict_results(symbol):
     try:
-        stock = yf.Ticker(symbol)
-        fin = stock.quarterly_financials
+        stock = yf.Ticker(symbol); fin = stock.quarterly_financials
         if fin is None or fin.empty: return "N/A"
         try:
             income = fin.loc['Net Income'].iloc[:3]
@@ -259,16 +265,9 @@ def predict_results(symbol):
         except: return "N/A"
     except: return "N/A"
 
-# --- MARKET ANALYSIS ---
 @st.cache_data(ttl=600)
 def get_smart_sectors():
-    # 🔥 FULL HEATMAP 🔥
-    sectors = {
-        "🏦 Bank": "^NSEBANK", "💻 IT": "^CNXIT", "🚗 Auto": "^CNXAUTO",
-        "💊 Pharma": "^CNXPHARMA", "🛒 FMCG": "^CNXFMCG", "⚙️ Metal": "^CNXMETAL",
-        "⚡ Energy": "^CNXENERGY", "🏠 Realty": "^CNXREALTY",
-        "💰 PSU Bank": "^CNXPSUB", "🏗️ Infra": "^CNXINFRA", "📺 Media": "^CNXMEDIA"
-    }
+    sectors = {"🏦 Bank": "^NSEBANK", "💻 IT": "^CNXIT", "🚗 Auto": "^CNXAUTO", "💊 Pharma": "^CNXPHARMA", "🛒 FMCG": "^CNXFMCG", "⚙️ Metal": "^CNXMETAL", "⚡ Energy": "^CNXENERGY", "🏠 Realty": "^CNXREALTY", "💰 PSU Bank": "^CNXPSUB", "🏗️ Infra": "^CNXINFRA", "📺 Media": "^CNXMEDIA"}
     results = {}
     for name, ticker in sectors.items():
         try:
@@ -302,70 +301,54 @@ def get_market_mood_strip():
         sp500 = yf.Ticker("^GSPC").history(period="2d")
         sp_chg = ((sp500['Close'].iloc[-1] - sp500['Close'].iloc[-2]) / sp500['Close'].iloc[-2]) * 100
         global_mood = "🟢 Bullish" if sp_chg > 0 else "🔴 Bearish"
-        nifty_chg = yf.Ticker("^NSEI").history(period="1d")['Close'].iloc[-1]
         fii_est = "+1250 Cr" if sp_chg > 0 else "-900 Cr" 
         dii_est = "+800 Cr"
         return global_mood, fii_est, dii_est
     except: return "Neutral", "N/A", "N/A"
 
-# --- PLOT CHART ---
 def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, max_idx=None, is_daily=True):
     try:
         if df is None or df.empty:
             st.warning("Chart data unavailable")
             return
-
         current_price = df['Close'].iloc[-1]
         try:
             atr_val = ta.atr(df['High'], df['Low'], df['Close'], length=14).iloc[-1]
             sl_price = current_price - (atr_val * current_atr_mult)
             tgt_price = current_price + (atr_val * (current_atr_mult * 2))
         except: sl_price = 0; tgt_price = 0
-
         if min_idx is None:
             lows = df['Low'].values; highs = df['High'].values
             min_idx = argrelextrema(lows, np.less, order=5)[0]
             max_idx = argrelextrema(highs, np.greater, order=5)[0]
-
         if isinstance(df.index, pd.DatetimeIndex):
             if is_daily: df.index = df.index.strftime('%Y-%m-%d')
             else: df.index = df.index.strftime('%d-%m %H:%M')
-
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
-        
-        # 🔥 ADDING 20, 50, 200 SMA 🔥
         if len(df) > 20: fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=20), line=dict(color='#3b82f6', width=1.5), name='SMA 20'))
         if len(df) > 50: fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=50), line=dict(color='#f97316', width=1.5), name='SMA 50'))
         if len(df) > 200: fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=200), line=dict(color='#000000', width=1.5), name='SMA 200'))
-        
         if sl_price > 0: fig.add_hline(y=sl_price, line_dash="dash", line_color="red", annotation_text=f"SL: {sl_price:.1f}")
         if tgt_price > 0: fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"TGT: {tgt_price:.1f}")
-        
         valid_min = [i for i in min_idx if i < len(df)]
         if valid_min: fig.add_trace(go.Scatter(x=df.iloc[valid_min].index, y=df.iloc[valid_min]['Low'], mode='markers', marker=dict(symbol='triangle-up', size=10, color='green'), name='Support'))
         valid_max = [i for i in max_idx if i < len(df)]
         if valid_max: fig.add_trace(go.Scatter(x=df.iloc[valid_max].index, y=df.iloc[valid_max]['High'], mode='markers', marker=dict(symbol='triangle-down', size=10, color='red'), name='Resistance'))
-
         fig.update_layout(title=f"{symbol} {title_extra}", xaxis_rangeslider_visible=False, height=400, margin=dict(l=10, r=10, t=50, b=10), template="plotly_white", xaxis={'type': 'category'})
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e: st.error(f"Chart Error: {str(e)}")
 
-# 🔥 HYBRID ANALYZER (WITH 2 PM REVERSAL & RECENT SUPPORT) 🔥
 def analyze_stock_hybrid(symbol):
     try:
         stock = yf.Ticker(symbol)
         df_daily = stock.history(period="1y", interval="1d", auto_adjust=True)
         df_intra = stock.history(period="5d", interval="15m", auto_adjust=True)
-        
         if df_daily is None or len(df_daily) < 50: return None
         try: info = stock.info
         except: info = {}
-        
         curr = df_daily['Close'].iloc[-1]
         change_pct = ((curr - df_daily['Close'].iloc[-2]) / df_daily['Close'].iloc[-2]) * 100
-        
-        # INDICATORS
         df_daily['SMA200'] = ta.sma(df_daily['Close'], length=200)
         df_daily['RSI'] = ta.rsi(df_daily['Close'], length=14)
         df_daily['Vol_Avg'] = ta.sma(df_daily['Volume'], length=10)
@@ -375,8 +358,6 @@ def analyze_stock_hybrid(symbol):
             st_dir_d = st_data_d.iloc[-1, 1]
             adx_val_d = ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)[ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14).columns[0]].iloc[-1]
         except: st_dir_d = 0; adx_val_d = 0
-
-        # INTRADAY
         intra_buy = False; intra_sell = False; reversal_2pm = False
         if df_intra is not None and len(df_intra) > 20:
             df_intra['RSI'] = ta.rsi(df_intra['Close'], length=14)
@@ -384,14 +365,10 @@ def analyze_stock_hybrid(symbol):
                 st_data_i = ta.supertrend(df_intra['High'], df_intra['Low'], df_intra['Close'], length=7, multiplier=3)
                 st_dir_i = st_data_i.iloc[-1, 1]
                 df_intra['VWAP'] = (df_intra['Volume'] * (df_intra['High'] + df_intra['Low'] + df_intra['Close']) / 3).cumsum() / df_intra['Volume'].cumsum()
-                
                 curr_intra = df_intra['Close'].iloc[-1]
                 vwap_val = df_intra['VWAP'].iloc[-1]
-                
                 if (curr_intra > vwap_val) and (st_dir_i == 1): intra_buy = True
                 if (curr_intra < vwap_val) and (st_dir_i == -1): intra_sell = True
-                
-                # ⚡ 2 PM REVERSAL LOGIC
                 last_time = df_intra.index[-1]
                 if last_time.hour >= 13 and (last_time.hour > 13 or last_time.minute >= 30):
                     prev_close = df_intra['Close'].iloc[-2]
@@ -401,27 +378,20 @@ def analyze_stock_hybrid(symbol):
                     if (prev_close < prev_vwap) and (curr_intra > vwap_val) and (vol_now > vol_avg * 1.5):
                         reversal_2pm = True
             except: pass
-
         try: atr_val = ta.atr(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14).iloc[-1]
         except: atr_val = 0
         sl_fix = round(curr - (atr_val * 2.0), 1)
         tgt_fix = round(curr + (atr_val * 4.0), 1)
-        
         lows = df_daily['Low'].values; highs = df_daily['High'].values
         min_idx = argrelextrema(lows, np.less, order=5)[0]
         max_idx = argrelextrema(highs, np.greater, order=5)[0]
-
-        # 🧱 RECENT SUPPORT LOGIC
         is_recent_support = False
         if len(min_idx) > 0:
             last_support_idx = min_idx[-1]
             candles_passed = len(df_daily) - 1 - last_support_idx
-            # 5 to 12 days lag means the triangle appeared recently (confirmation lag + few days)
             if 5 <= candles_passed <= 12:
                 support_low = df_daily['Low'].iloc[last_support_idx]
-                if curr <= (support_low * 1.08): # Price within 8% of support
-                    is_recent_support = True
-
+                if curr <= (support_low * 1.08): is_recent_support = True
         weekly_trend = "⚪ Neutral"
         try:
             df_wk = stock.history(period="1y", interval="1wk")
@@ -429,52 +399,39 @@ def analyze_stock_hybrid(symbol):
             wk_sma20 = ta.sma(df_wk['Close'], length=20).iloc[-1]
             weekly_trend = "🟢 UP" if wk_curr > wk_sma20 else "🔴 DOWN"
         except: pass
-
         news_dot = get_news_sentiment(symbol)
-        
         res = {
             "Symbol": symbol, "Price": round(curr, 2), "Change": round(change_pct, 2),
             "F_Jackpot": False, "F_CE_100": False, "F_CE_80": False, "F_PE_100": False, "F_PE_80": False,
             "F_Day_Buy": False, "F_Day_Sell": False, "F_2PM": False,
             "F_Swing": False, "F_Double": False, "F_Tech": False, "F_Fund": False, "F_Trend": False,
-            "F_Support": is_recent_support, # Added
+            "F_Support": is_recent_support, 
             "F_Result": False, "Result_Text": "-",
             "DF_Daily": df_daily, "DF_Intra": df_intra, "ATR": atr_val, "Weekly": weekly_trend, "Alert_Trigger": False,
             "SL": sl_fix, "TGT": tgt_fix, "Min_Idx": min_idx, "Max_Idx": max_idx, "News": news_dot
         }
-
         if intra_buy: res['F_Day_Buy'] = True
         if intra_sell: res['F_Day_Sell'] = True
         if reversal_2pm: res['F_2PM'] = True
-
         if pd.isna(df_daily['SMA200'].iloc[-1]): return res
-        
         sma200 = df_daily['SMA200'].iloc[-1]
         rsi_d = df_daily['RSI'].iloc[-1]
         vol_blast = df_daily['Volume'].iloc[-1] > (df_daily['Vol_Avg'].iloc[-1] * 1.5)
-        
-        # STRICT STRATEGIES
         pe_ratio = info.get('trailingPE', 100); roe = info.get('returnOnEquity', 0)
         is_fund = (0 < pe_ratio < 60 and roe > 0.12)
         is_tech = (curr > sma200 and rsi_d > 55)
         if is_fund and is_tech and vol_blast and weekly_trend == "🟢 UP": res["F_Jackpot"] = True
-
         high_20 = df_daily['High'].tail(20).max()
         if curr >= (high_20 * 0.98) and rsi_d > 60 and vol_blast: res["F_Swing"] = True
-
         if st_dir_d == 1 and rsi_d > 60 and adx_val_d > 25 and weekly_trend == "🟢 UP": res['F_CE_100'] = True
         elif st_dir_d == 1 and rsi_d > 55: res['F_CE_80'] = True
-        
         if st_dir_d == -1 and rsi_d < 40 and adx_val_d > 25 and weekly_trend == "🔴 DOWN": res['F_PE_100'] = True
         elif st_dir_d == -1 and rsi_d < 45: res['F_PE_80'] = True
-
         if curr > sma200: res["F_Tech"] = True
         if curr > df_daily['Close'].iloc[-20]: res["F_Trend"] = True
         if 0 < pe_ratio < 60: res["F_Fund"] = True
         if res["F_Fund"] and res["F_Tech"]: res["F_Double"] = True
-        
         if vol_blast and (curr > df_daily['EMA20'].iloc[-1]): res["Alert_Trigger"] = True
-            
         return res
     except: return None
 
@@ -494,7 +451,7 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# 2. MARKET INDICES (IN BOX)
+# 2. MARKET INDICES
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🌍 Market Indices</div>', unsafe_allow_html=True)
 nifty = analyze_market_index("^NSEI")
@@ -513,7 +470,7 @@ for name, d, key in data_list:
     if d and st.session_state[f'show_{key}']: plot_chart(name, d['df'], f"({d['trend']})", is_daily=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 3. HEATMAP (IN BOX)
+# 3. HEATMAP
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🌡️ Sector Heatmap</div>', unsafe_allow_html=True)
 mood = get_smart_sectors()
@@ -524,7 +481,7 @@ for i, (sec, val) in enumerate(mood.items()):
         st.markdown(f"<div class='sector-box'><span class='sec-name'>{sec}</span><span class='sec-val' style='color:{val['tc']}'>{val['change']}%</span><br><span class='sec-trend' style='color:{tc}'>{val['trend']}</span></div>", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 4. SCANNER CONFIG (IN BOX)
+# 4. SCANNER CONFIG
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">⚙️ Scanner Configuration</div>', unsafe_allow_html=True)
 c1, c2 = st.columns([1, 1])
@@ -564,26 +521,14 @@ if 'scan_data' in st.session_state:
     data = st.session_state['scan_data']
     logic_map = {}
     if "Intraday" in scan_mode:
-        logic_map = {
-            "🚀 Day Buy": "F_Day_Buy", 
-            "🐻 Day Sell": "F_Day_Sell", 
-            "⚡ 2 PM Reversal": "F_2PM", 
-            "🧱 Near Support": "F_Support", # New Tab
-            "🔥 Alerts": "Alert_Trigger"
-        }
+        logic_map = {"🚀 Day Buy": "F_Day_Buy", "🐻 Day Sell": "F_Day_Sell", "⚡ 2 PM Reversal": "F_2PM", "🧱 Near Support": "F_Support", "🔥 Alerts": "Alert_Trigger"}
     else:
-        logic_map = {
-            "🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80",
-            "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double",
-            "🧱 Near Support": "F_Support", # New Tab
-            "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"
-        }
+        logic_map = {"🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🧱 Near Support": "F_Support", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
     
     final_tabs = {}
     for name, key in logic_map.items():
         f = [x for x in data if x.get(key)]
         if f: final_tabs[name] = f
-    
     if len(data) > 0: final_tabs["🔮 Result Magic"] = data 
     
     if final_tabs:
@@ -595,7 +540,6 @@ if 'scan_data' in st.session_state:
                 if name == "🔮 Result Magic":
                     st.info("AI checking recent 3 quarters for financial trend...")
                     res_list = []
-                    # Limit to 10 for performance
                     for item in lst[:10]:
                         pred = predict_results(item['Symbol'])
                         if "Bullish" in pred or "Caution" in pred:
@@ -618,7 +562,7 @@ if 'scan_data' in st.session_state:
                             plot_chart(sel_sym, chart_df, f"({scan_mode})", sl_multiplier, sel_item['Min_Idx'], sel_item['Max_Idx'], is_daily)
                         with cc2:
                             st.subheader(f"Trade {sel_sym}")
-                            atr_val = sel_item['ATR']
+                            atr_val = sel_item['ATR']; auto_qty = 1
                             if atr_val > 0:
                                 dyn_sl = sel_item['Price'] - (atr_val * sl_multiplier)
                                 sl_gap = sel_item['Price'] - dyn_sl
@@ -626,14 +570,13 @@ if 'scan_data' in st.session_state:
                                     max_risk_amt = capital * (risk_pct / 100)
                                     auto_qty = int(max_risk_amt / sl_gap)
                                     st.markdown(f"<div class='qty-box'>💡 Auto Qty: {auto_qty}</div>", unsafe_allow_html=True)
-                                    st.write(f"Risk: ₹{sl_gap:.1f} / share")
-                            qty = st.number_input("Final Qty", 1, 10000, auto_qty if 'auto_qty' in locals() else 1, key=f"q_{sel_sym}")
+                            qty = st.number_input("Final Qty", 1, 10000, auto_qty, key=f"q_{sel_sym}")
                             if st.button("BUY NOW", key=f"b_{sel_sym}", type="secondary"):
                                 if buy_stock(sel_sym, qty, sel_item['Price'], name): st.success("Bought!")
                                 else: st.error("No Cash!")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# 6. PORTFOLIO (IN BOX)
+# 6. PORTFOLIO
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">📋 My Holdings</div>', unsafe_allow_html=True)
 if not st.session_state['portfolio']['holdings']:
@@ -642,13 +585,11 @@ else:
     c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([2.5, 1.5, 1.5, 1, 1.5, 1.5, 1.5, 0.8, 0.8])
     headers = ["STOCK", "DATE", "CAT", "QTY", "AVG", "LTP", "P/L", "CHART", "SELL"]
     for c, h in zip([c1,c2,c3,c4,c5,c6,c7,c8,c9], headers): c.markdown(f"<div class='table-header'>{h}</div>", unsafe_allow_html=True)
-
     for s, v in st.session_state['portfolio']['holdings'].items():
         try: live = yf.Ticker(s).fast_info['last_price']
         except: live = v['buy_price']
         pl = (live - v['buy_price']) * v['qty']
         pl_c = "green" if pl >= 0 else "red"
-        
         with st.container():
             c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([2.5, 1.5, 1.5, 1, 1.5, 1.5, 1.5, 0.8, 0.8])
             c1.markdown(f"<div class='table-row'><b>{s}</b></div>", unsafe_allow_html=True)
@@ -658,26 +599,9 @@ else:
             c5.markdown(f"<div class='table-row'>{v['buy_price']:.1f}</div>", unsafe_allow_html=True)
             c6.markdown(f"<div class='table-row'>{live:.1f}</div>", unsafe_allow_html=True)
             c7.markdown(f"<div class='table-row' style='color:{pl_c}'><b>{pl:.1f}</b></div>", unsafe_allow_html=True)
-            
-            if c8.button("📉", key=f"p_chart_{s}", type="secondary"):
-                if st.session_state.get('active_chart') == s:
-                    del st.session_state['active_chart']
-                else:
-                    st.session_state['active_chart'] = s
-            
-            if c9.button("✕", key=f"sell_{s}", type="secondary"):
-                sell_stock(s, live); st.rerun()
-
+            if c8.button("📉", key=f"p_chart_{s}", type="secondary"): st.session_state['active_chart'] = s
+            if c9.button("✕", key=f"sell_{s}", type="secondary"): sell_stock(s, live); st.rerun()
         if st.session_state.get('active_chart') == s:
-            try:
-                with st.spinner("Loading Chart..."):
-                    d_hold = analyze_stock_hybrid(s)
-                    if d_hold:
-                        chart_df_h = d_hold['DF_Daily'] if "Swing" in scan_mode else d_hold['DF_Intra']
-                        is_daily_h = "Swing" in scan_mode
-                        plot_chart(s, chart_df_h, "(Live Portfolio View)", 2.0, d_hold['Min_Idx'], d_hold['Max_Idx'], is_daily_h)
-                        if st.button("Close Chart", key=f"close_{s}", type="secondary"):
-                            del st.session_state['active_chart']; st.rerun()
-            except: st.error("Chart Error")
-
+            d_hold = analyze_stock_hybrid(s)
+            if d_hold: plot_chart(s, d_hold['DF_Daily'], "(Live Portfolio)", 2.0, d_hold['Min_Idx'], d_hold['Max_Idx'])
 st.markdown('</div>', unsafe_allow_html=True)
