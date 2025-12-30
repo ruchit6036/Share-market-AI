@@ -116,7 +116,7 @@ st.markdown("""
 
 def load_data():
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection) #
+        conn = st.connection("gsheets", type=GSheetsConnection, connection_name="gcp_service_account") #
         df = conn.read(ttl=0) #
         if df.empty:
             return {"balance": 1000000.0, "holdings": {}} #
