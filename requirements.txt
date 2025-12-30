@@ -2,9 +2,7 @@ streamlit
 yfinance
 pandas
 pandas_ta
-numpy
-plotly
 scipy
-requests
-openpyxl
-PyGithub
+plotly
+gspread
+oauth2client
