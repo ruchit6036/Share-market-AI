@@ -2,7 +2,8 @@ streamlit
 yfinance
 pandas
 pandas_ta
+numpy
 scipy
 plotly
 gspread
-oauth2client
+google-auth
