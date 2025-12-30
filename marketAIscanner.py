@@ -129,7 +129,7 @@ def load_data():
 
 def save_data(data):
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection) #
+        conn = st.connection("gsheets", type=GSheetsConnection, connection_name="gcp_service_account") #
         new_df = pd.DataFrame([{
             "balance": data["balance"],
             "holdings_json": json.dumps(data["holdings"])
