@@ -116,7 +116,7 @@ st.markdown("""
 
 def load_data():
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection, connection_name="gcp_service_account") #
+        conn = st.connection("gcp_service_account", type=GSheetsConnection) #
         df = conn.read(ttl=0) #
         if df.empty:
             return {"balance": 1000000.0, "holdings": {}} #
@@ -129,7 +129,7 @@ def load_data():
 
 def save_data(data):
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection, connection_name="gcp_service_account") #
+        conn = st.connection("gcp_service_account", type=GSheetsConnection) #
         new_df = pd.DataFrame([{
             "balance": data["balance"],
             "holdings_json": json.dumps(data["holdings"])
