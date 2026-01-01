@@ -10,6 +10,9 @@ import time
 import warnings
 from datetime import datetime
 
+# अपनी गूगल शीट का पूरा URL यहाँ डालें
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
+
 # --- 1. SUPPRESS WARNINGS ---
 warnings.filterwarnings('ignore')
 
@@ -222,8 +225,9 @@ def buy_stock(symbol, qty, price, category):
             holdings_list.append([symbol, float(price), int(qty), category, today_date])
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
-        conn.update(worksheet="Portfolio", data=new_holdings_df)
-        conn.update(worksheet="Balance", data=new_balance_df)
+        # नया तरीका (इसे इस्तेमाल करें)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         return True
@@ -238,8 +242,9 @@ def sell_stock(symbol, live_price):
                          for s, v in data['holdings'].items() if s != symbol]
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
-        conn.update(worksheet="Portfolio", data=new_holdings_df)
-        conn.update(worksheet="Balance", data=new_balance_df)
+        # नया तरीका (इसे इस्तेमाल करें)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         st.rerun()
