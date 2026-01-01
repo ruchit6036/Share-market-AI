@@ -131,11 +131,12 @@ st.markdown("""
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_from_sheets():
-    # 'Portfolio' टैब से डेटा पढ़ना
-    holdings_df = conn.read(worksheet="Portfolio", ttl=0)
-    # 'Balance' टैब से कैश पढ़ना
-    balance_df = conn.read(worksheet="Balance", ttl=0)
+    # अपनी असली Google Sheet का लिंक यहाँ डालें
+    MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
     
+    # यहाँ हमने 'spreadsheet=MY_SHEET' जोड़ दिया है
+    holdings_df = conn.read(spreadsheet=MY_SHEET, worksheet="Portfolio", ttl=0)
+    balance_df = conn.read(spreadsheet=MY_SHEET, worksheet="Balance", ttl=0)
     # बैलेंस को नंबर में बदलना
     current_balance = float(balance_df.iloc[0, 0])
     
@@ -226,8 +227,9 @@ def buy_stock(symbol, qty, price, category):
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
         # नया तरीका (इसे इस्तेमाल करें)
-        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
-        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
+        MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
+        conn.update(spreadsheet=MY_SHEET, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=MY_SHEET, worksheet="Balance", data=new_balance_df)
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         return True
@@ -243,8 +245,9 @@ def sell_stock(symbol, live_price):
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
         # नया तरीका (इसे इस्तेमाल करें)
-        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
-        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
+        MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
+        conn.update(spreadsheet=MY_SHEET, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=MY_SHEET, worksheet="Balance", data=new_balance_df)
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         st.rerun()
