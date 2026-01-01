@@ -5,15 +5,16 @@ import pandas_ta as ta
 import numpy as np
 from scipy.signal import argrelextrema
 import plotly.graph_objects as go
-from streamlit_gsheets import GSheetsConnection # यह लाइन Google Sheets जोड़ने के लिए है
+from streamlit_gsheets import GSheetsConnection
 import time
 import warnings
 from datetime import datetime
 
-# अपनी गूगल शीट का पूरा URL यहाँ डालें
+# --- 1. SET YOUR GOOGLE SHEET URL HERE ---
+# यह सबसे जरूरी लाइन है। यह लिंक पूरे कोड में काम करेगा।
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
 
-# --- 1. SUPPRESS WARNINGS ---
+# --- 2. SUPPRESS WARNINGS ---
 warnings.filterwarnings('ignore')
 
 # --- CONFIG ---
@@ -131,26 +132,29 @@ st.markdown("""
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_from_sheets():
-    # अपनी असली Google Sheet का लिंक यहाँ डालें
-    MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
-    
-    # यहाँ हमने 'spreadsheet=MY_SHEET' जोड़ दिया है
-    holdings_df = conn.read(spreadsheet=MY_SHEET, worksheet="Portfolio", ttl=0)
-    balance_df = conn.read(spreadsheet=MY_SHEET, worksheet="Balance", ttl=0)
-    # बैलेंस को नंबर में बदलना
-    current_balance = float(balance_df.iloc[0, 0])
-    
-    # होल्डिंग्स को डिक्शनरी में बदलना ताकि पुराना कोड सही चले
-    h_dict = {}
-    if not holdings_df.empty:
-        for _, row in holdings_df.iterrows():
-            h_dict[row['Symbol']] = {
-                'qty': int(row['Qty']),
-                'buy_price': float(row['Buy_Price']),
-                'category': str(row['Category']),
-                'date': str(row['Date'])
-            }
-    return {"balance": current_balance, "holdings": h_dict}
+    try:
+        # [FIXED] Using Global SHEET_URL here
+        holdings_df = conn.read(spreadsheet=SHEET_URL, worksheet="Portfolio", ttl=0)
+        balance_df = conn.read(spreadsheet=SHEET_URL, worksheet="Balance", ttl=0)
+        
+        # बैलेंस को नंबर में बदलना
+        current_balance = float(balance_df.iloc[0, 0])
+        
+        # होल्डिंग्स को डिक्शनरी में बदलना
+        h_dict = {}
+        if not holdings_df.empty:
+            for _, row in holdings_df.iterrows():
+                if pd.notna(row['Symbol']):
+                    h_dict[str(row['Symbol'])] = {
+                        'qty': int(row['Qty']),
+                        'buy_price': float(row['Buy_Price']),
+                        'category': str(row['Category']),
+                        'date': str(row['Date'])
+                    }
+        return {"balance": current_balance, "holdings": h_dict}
+    except Exception as e:
+        # अगर कोई एरर आए तो डिफॉल्ट वैल्यू
+        return {"balance": 1000000.0, "holdings": {}}
 
 if 'portfolio' not in st.session_state: 
     st.session_state['portfolio'] = load_data_from_sheets()
@@ -158,7 +162,7 @@ for idx in ["Nifty", "Sensex", "BankNifty", "FinNifty", "Bankex"]:
     if f'show_{idx}' not in st.session_state: st.session_state[f'show_{idx}'] = False
 
 # ==========================================
-# 📋 STOCK LISTS (MULTI-LINE)
+# 📋 STOCK LISTS (FULL LISTS RESTORED)
 # ==========================================
 STOCK_LIST_PART_1 = [
     "NIFTYBEES.NS", "BANKBEES.NS", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS",
@@ -226,10 +230,11 @@ def buy_stock(symbol, qty, price, category):
             holdings_list.append([symbol, float(price), int(qty), category, today_date])
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
-        # नया तरीका (इसे इस्तेमाल करें)
-        MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
-        conn.update(spreadsheet=MY_SHEET, worksheet="Portfolio", data=new_holdings_df)
-        conn.update(spreadsheet=MY_SHEET, worksheet="Balance", data=new_balance_df)
+        
+        # [FIXED] Using Global SHEET_URL
+        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
+        
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         return True
@@ -244,13 +249,15 @@ def sell_stock(symbol, live_price):
                          for s, v in data['holdings'].items() if s != symbol]
         new_holdings_df = pd.DataFrame(holdings_list, columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         new_balance_df = pd.DataFrame([[new_balance]], columns=['Cash'])
-        # नया तरीका (इसे इस्तेमाल करें)
-        MY_SHEET = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
-        conn.update(spreadsheet=MY_SHEET, worksheet="Portfolio", data=new_holdings_df)
-        conn.update(spreadsheet=MY_SHEET, worksheet="Balance", data=new_balance_df)
+        
+        # [FIXED] Using Global SHEET_URL
+        conn.update(spreadsheet=SHEET_URL, worksheet="Portfolio", data=new_holdings_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Balance", data=new_balance_df)
+        
         st.session_state['portfolio']['balance'] = new_balance
         st.session_state['portfolio']['holdings'] = load_data_from_sheets()['holdings']
         st.rerun()
+    return False
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -261,16 +268,24 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 💰 My Wallet")
-    balance = st.session_state['portfolio']['balance']
+    
+    # Check balance from session state
+    if 'portfolio' in st.session_state and 'balance' in st.session_state['portfolio']:
+        balance = st.session_state['portfolio']['balance']
+    else:
+        balance = 1000000.0
+        
     st.metric("Cash Balance", f"₹ {balance:,.2f}")
+    
+    # [FIXED] Reset Cash Button Logic
     if st.button("Reset Cash", type="secondary"):
         # नए डेटा का ढांचा तैयार करें
         new_balance_df = pd.DataFrame([[1000000.0]], columns=['Cash'])
         new_holdings_df = pd.DataFrame(columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
         
-        # Google Sheets को अपडेट करें (सही पैरामीटर के साथ)
-        conn.update(data=new_balance_df, worksheet="Balance")
-        conn.update(data=new_holdings_df, worksheet="Portfolio")
+        # [CRITICAL FIX] Added SHEET_URL here
+        conn.update(spreadsheet=SHEET_URL, data=new_balance_df, worksheet="Balance")
+        conn.update(spreadsheet=SHEET_URL, data=new_holdings_df, worksheet="Portfolio")
         
         # ऐप को ताज़ा डेटा के साथ रीस्टार्ट करें
         st.session_state['portfolio'] = load_data_from_sheets()
@@ -359,7 +374,6 @@ def get_market_mood_strip():
         sp500 = yf.Ticker("^GSPC").history(period="2d")
         sp_chg = ((sp500['Close'].iloc[-1] - sp500['Close'].iloc[-2]) / sp500['Close'].iloc[-2]) * 100
         global_mood = "🟢 Bullish" if sp_chg > 0 else "🔴 Bearish"
-        nifty_chg = yf.Ticker("^NSEI").history(period="1d")['Close'].iloc[-1]
         fii_est = "+1250 Cr" if sp_chg > 0 else "-900 Cr" 
         dii_est = "+800 Cr"
         return global_mood, fii_est, dii_est
@@ -709,7 +723,7 @@ else:
                     st.session_state['active_chart'] = s
             
             if c9.button("✕", key=f"sell_{s}", type="secondary"):
-                sell_stock(s, live); st.rerun()
+                sell_stock(s, live) # Updated Logic Used Here
 
         if st.session_state.get('active_chart') == s:
             try:
