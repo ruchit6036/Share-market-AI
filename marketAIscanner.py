@@ -256,17 +256,17 @@ with st.sidebar:
     balance = st.session_state['portfolio']['balance']
     st.metric("Cash Balance", f"₹ {balance:,.2f}")
     if st.button("Reset Cash", type="secondary"):
-    # नए डेटा का ढांचा तैयार करें
-   	 new_balance_df = pd.DataFrame([[1000000.0]], columns=['Cash'])
-    new_holdings_df = pd.DataFrame(columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
-    
-    	# Google Sheets को पूरी तरह से रीसेट करें
-    conn.update(worksheet="Balance", data=new_balance_df)
-    conn.update(worksheet="Portfolio", data=new_holdings_df)
-    
-    	# ऐप को ताज़ा डेटा के साथ रीस्टार्ट करें
-    st.session_state['portfolio'] = load_data_from_sheets()
-    st.rerun()
+        # नए डेटा का ढांचा तैयार करें
+        new_balance_df = pd.DataFrame([[1000000.0]], columns=['Cash'])
+        new_holdings_df = pd.DataFrame(columns=['Symbol', 'Buy_Price', 'Qty', 'Category', 'Date'])
+        
+        # Google Sheets को अपडेट करें (सही पैरामीटर के साथ)
+        conn.update(data=new_balance_df, worksheet="Balance")
+        conn.update(data=new_holdings_df, worksheet="Portfolio")
+        
+        # ऐप को ताज़ा डेटा के साथ रीस्टार्ट करें
+        st.session_state['portfolio'] = load_data_from_sheets()
+        st.rerun()
         
     
     st.markdown("---")
