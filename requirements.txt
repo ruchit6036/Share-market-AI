@@ -2,9 +2,10 @@ streamlit
 yfinance
 pandas
 pandas-ta
-numpy<2.0.0
+numpy
 scipy
 plotly
 st-gsheets-connection
 requests
 openpyxl
+
