@@ -7,6 +7,7 @@ from scipy.signal import argrelextrema
 import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import warnings
+import requests  # Telegram ke liye zaroori library
 from datetime import datetime
 
 # --- 1. SET YOUR GOOGLE SHEET URL HERE ---
@@ -26,26 +27,18 @@ st.markdown("""
     h1, h2, h3, p, label, .stMarkdown {color: #0f172a !important;}
     .dashboard-card {background-color: #ffffff; padding: 25px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 25px;}
     .card-title {font-size: 26px; font-weight: 900; color: #1e293b; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px solid #3b82f6; text-transform: uppercase; letter-spacing: 1px;}
-    
-    /* Sentiment Bar */
     .sentiment-bar {display: flex; justify-content: center; background: #1e293b; color: white; padding: 15px 25px; border-radius: 10px; margin-bottom: 25px; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
     .sent-item { font-size: 20px; }
-    
-    /* Sector Box */
     .sector-box {background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; text-align: center; margin-bottom: 10px; transition: transform 0.2s;}
     .sector-box:hover {transform: scale(1.03); border-color: #3b82f6;}
     .sec-name {font-size: 14px; font-weight: 800; color: #334155; display: block;}
     .sec-val {font-size: 15px; font-weight: 700;}
-
-    /* Index Option Signal Text */
     .opt-sig-box { font-size: 14px; font-weight: bold; padding: 5px; border-radius: 5px; margin-top: 5px; text-align: center; }
     .opt-buy-ce { background-color: #dcfce7; color: #166534; border: 1px solid #86efac; }
     .opt-buy-pe { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
     .opt-wait { background-color: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
-
     div.stButton > button[kind="primary"] {background: linear-gradient(45deg, #f97316, #ea580c) !important; color: white !important; border: none; font-size: 20px; height: 55px; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);}
     div.stButton > button[kind="secondary"] {background-color: #64748b !important; color: white !important; border: none; font-weight: bold;}
-    
     .table-header {font-size: 14px; font-weight: 900; color: #475569; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px;}
     .table-row {font-size: 15px; font-weight: 600; color: #1e293b; padding: 12px 0; border-bottom: 1px solid #f1f5f9;}
     .main-header {text-align: center; padding: 25px; background: linear-gradient(90deg, #1e293b 0%, #334155 100%); color: white !important; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);}
@@ -80,6 +73,19 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = load_data_from_sheets()
 for idx in ["Nifty", "Sensex", "BankNifty", "FinNifty", "Bankex"]:
     if f'show_{idx}' not in st.session_state: st.session_state[f'show_{idx}'] = False
+
+# --- 🔔 TELEGRAM ALERT FUNCTION ---
+def send_telegram_alert(message):
+    try:
+        # Streamlit secrets se Token aur Chat ID lena
+        bot_token = st.secrets["telegram"]["token"]
+        chat_id = st.secrets["telegram"]["chat_id"]
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        params = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+        requests.get(url, params=params)
+    except Exception as e:
+        pass # Agar secrets set nahi hain to error ignore karega
 
 # ==========================================
 # 📋 STOCK LISTS (Full Lists)
@@ -203,10 +209,8 @@ def predict_results(symbol):
         fin = stock.quarterly_financials
         if fin is None or fin.empty: return "N/A"
         try:
-            # Check if enough columns for YoY
             cols = fin.columns
             if len(cols) >= 5:
-                # Find Net Income Row
                 key_row = 'Net Income' if 'Net Income' in fin.index else fin.index[0]
                 curr = fin.loc[key_row].iloc[0]
                 last_yr = fin.loc[key_row].iloc[4]
@@ -217,7 +221,6 @@ def predict_results(symbol):
                 elif growth < -10: return f"⚠️ Weak (-{int(abs(growth))}%)"
                 else: return "Neutral"
             else:
-                # Fallback to QoQ
                 inc = fin.loc['Net Income'].iloc[:2]
                 return "✅ QoQ Growth" if inc.iloc[0] > inc.iloc[1] else "⚠️ QoQ Dip"
         except: return "N/A"
@@ -253,8 +256,6 @@ def analyze_market_index(symbol):
         st_data = ta.supertrend(df['High'], df['Low'], df['Close'], length=7, multiplier=3)
         st_dir = st_data.iloc[-1, 1]
         trend_txt = "🟢 BULL" if st_dir == 1 else "🔴 BEAR"
-        
-        # Call/Put Signal Calculation
         opt_sig = get_index_signal(df_intra)
         
         return {"price": curr, "change": change, "trend": trend_txt, "df": df, "opt_sig": opt_sig}
@@ -263,7 +264,6 @@ def analyze_market_index(symbol):
 # --- MARKET ANALYSIS ---
 @st.cache_data(ttl=600)
 def get_smart_sectors():
-    # Full Sector List Restored
     sectors = {
         "🏦 Bank": "^NSEBANK", "💻 IT": "^CNXIT", "🚗 Auto": "^CNXAUTO",
         "💊 Pharma": "^CNXPHARMA", "🛒 FMCG": "^CNXFMCG", "⚙️ Metal": "^CNXMETAL",
@@ -320,7 +320,6 @@ def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, m
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
         fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=20), line=dict(color='#3b82f6', width=1.5), name='SMA 20'))
         
-        # Fibonacci
         max_h = df['High'].max(); min_l = df['Low'].min(); diff = max_h - min_l
         if diff > 0:
             fig.add_hline(y=max_h - (diff * 0.618), line_dash="dot", line_color="#EAB308", annotation_text="Golden 61.8%")
@@ -338,7 +337,7 @@ def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, m
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e: st.error(f"Chart Error: {str(e)}")
 
-# 🔥 OLD LOGIC ANALYZER (WITH ADX 100% ONLY) 🔥
+# 🔥 OLD LOGIC ANALYZER (WITH SAFE JACKPOT MODE) 🔥
 def analyze_stock_hybrid(symbol):
     try:
         stock = yf.Ticker(symbol)
@@ -352,14 +351,12 @@ def analyze_stock_hybrid(symbol):
         curr = df_daily['Close'].iloc[-1]
         change_pct = ((curr - df_daily['Close'].iloc[-2]) / df_daily['Close'].iloc[-2]) * 100
         
-        # Indicators
         df_daily['SMA200'] = ta.sma(df_daily['Close'], length=200)
         df_daily['SMA20'] = ta.sma(df_daily['Close'], length=20)
         df_daily['RSI'] = ta.rsi(df_daily['Close'], length=14)
         df_daily['Vol_Avg'] = ta.sma(df_daily['Volume'], length=10)
         df_daily['EMA20'] = ta.ema(df_daily['Close'], length=20)
         
-        # ADX Calculation (Only for 100% Strategies)
         adx_df = ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)
         adx_val_d = adx_df[adx_df.columns[0]].iloc[-1] if not adx_df.empty else 0
         
@@ -368,7 +365,6 @@ def analyze_stock_hybrid(symbol):
             st_dir_d = st_data_d.iloc[-1, 1]
         except: st_dir_d = 0
 
-        # Intraday
         intra_buy = False; intra_sell = False; reversal_2pm = False
         if df_intra is not None and len(df_intra) > 20:
             df_intra['RSI'] = ta.rsi(df_intra['Close'], length=14)
@@ -381,7 +377,6 @@ def analyze_stock_hybrid(symbol):
                 if (curr_intra > vwap_val) and (st_dir_i == 1): intra_buy = True
                 if (curr_intra < vwap_val) and (st_dir_i == -1): intra_sell = True
                 
-                # 2 PM Logic
                 last_time = df_intra.index[-1]
                 if last_time.hour >= 13 and (last_time.hour > 13 or last_time.minute >= 30):
                     prev_close = df_intra['Close'].iloc[-2]; prev_vwap = df_intra['VWAP'].iloc[-2]
@@ -401,7 +396,6 @@ def analyze_stock_hybrid(symbol):
         fresh_support = (len(min_idx) > 0 and min_idx[-1] >= (last_idx - 1))
         fresh_resistance = (len(max_idx) > 0 and max_idx[-1] >= (last_idx - 1))
 
-        # --- OLD LOGIC PURE (With ADX only on 100%) ---
         weekly_trend_up = False
         try:
             df_wk = stock.history(period="1y", interval="1wk")
@@ -427,17 +421,13 @@ def analyze_stock_hybrid(symbol):
         pe_ratio = info.get('trailingPE', 100); roe = info.get('returnOnEquity', 0)
         is_fund = (0 < pe_ratio < 60 and roe > 0.12); is_tech = (curr > sma200 and rsi_d > 55)
 
-        # Standard OLD LOGIC
-        if is_fund and is_tech and vol_blast and weekly_trend_up: res["F_Jackpot"] = True
+        # 🛑 UPDATED JACKPOT LOGIC (Added RSI < 70 Safety Check)
+        if is_fund and is_tech and vol_blast and weekly_trend_up and (rsi_d < 70): res["F_Jackpot"] = True
         
-        # CE 100% (Includes ADX)
         if st_dir_d == 1 and rsi_d > 60 and adx_val_d > 25 and weekly_trend_up: res['F_CE_100'] = True
-        # CE 80% (No ADX)
         elif st_dir_d == 1 and rsi_d > 55: res['F_CE_80'] = True
         
-        # PE 100% (Includes ADX)
         if st_dir_d == -1 and rsi_d < 40 and adx_val_d > 25: res['F_PE_100'] = True 
-        # PE 80% (No ADX)
         elif st_dir_d == -1 and rsi_d < 45: res['F_PE_80'] = True
         
         if curr > sma200: res["F_Tech"] = True
@@ -446,17 +436,13 @@ def analyze_stock_hybrid(symbol):
         if res["F_Fund"] and res["F_Tech"]: res["F_Double"] = True
         if vol_blast: res["Alert_Trigger"] = True
         
-        # --- SIGNAL QUALITY LOGIC (RESTORED) ---
         signal_quality = "⚪ Neutral"
-        
-        # Super Strong CE: Jackpot OR CE 100% + Weekly Trend UP + High Volume
         if (res['F_Jackpot'] or res['F_CE_100']) and weekly_trend_up and is_high_volume:
             signal_quality = "🔥 SUPER STRONG CE"
-        
-        # Super Strong PE: PE 100% + High Volume
+            send_telegram_alert(f"🚀 ALERT: {symbol} is SUPER STRONG CE!\nPrice: {curr}\nRSI: {rsi_d:.1f}\nVol: High")
         elif res['F_PE_100'] and is_high_volume:
             signal_quality = "⚡ SUPER STRONG PE"
-            
+            send_telegram_alert(f"🐻 ALERT: {symbol} is SUPER STRONG PE!\nPrice: {curr}\nRSI: {rsi_d:.1f}\nVol: High")
         elif res['F_CE_100'] or res['F_CE_80']: signal_quality = "✅ Strong CE"
         elif res['F_PE_100'] or res['F_PE_80']: signal_quality = "🔻 Strong PE"
         elif fresh_support: signal_quality = "🟢 Support Buy"
@@ -464,8 +450,6 @@ def analyze_stock_hybrid(symbol):
         elif intra_sell: signal_quality = "🐻 Day Sell"
         
         res["Signal_Quality"] = signal_quality
-        
-        # Tags for display
         active_tags = []
         if res["F_Jackpot"]: active_tags.append("🏆 Jackpot")
         if res["F_CE_100"]: active_tags.append("🚀 CE 100%")
@@ -473,6 +457,11 @@ def analyze_stock_hybrid(symbol):
         if res["F_Support"]: active_tags.append("🟢 Support")
         if res["F_Resistance"]: active_tags.append("🔴 Resistance")
         if res["F_Day_Buy"]: active_tags.append("🚀 Day Buy")
+        if res["F_Trend"]: active_tags.append("🌊 Trend")
+        if res["F_Tech"]: active_tags.append("📈 Tech")
+        if res["F_Fund"]: active_tags.append("💎 Fund")
+        if res["F_Double"]: active_tags.append("🥈 Double")
+        if res["Alert_Trigger"]: active_tags.append("🔥 Alert")
         
         res["All_Tags"] = " | ".join(active_tags) if active_tags else "-"
         return res
@@ -491,45 +480,32 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# 2. MARKET INDICES & OPTION SIGNAL (RESTORED & FIXED)
+# 2. MARKET INDICES & OPTION SIGNAL
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🌍 Market Indices & Signals</div>', unsafe_allow_html=True)
-
-idx_list = [
-    ("Nifty 50", "^NSEI", "Nifty"),
-    ("Sensex", "^BSESN", "Sensex"),
-    ("Bank Nifty", "^NSEBANK", "BankNifty"),
-    ("Fin Nifty", "NIFTY_FIN_SERVICE.NS", "FinNifty"),
-    ("Bankex", "^BSEBANK", "Bankex")
-]
+idx_list = [("Nifty 50", "^NSEI", "Nifty"), ("Sensex", "^BSESN", "Sensex"), ("Bank Nifty", "^NSEBANK", "BankNifty"), ("Fin Nifty", "NIFTY_FIN_SERVICE.NS", "FinNifty"), ("Bankex", "^BSEBANK", "Bankex")]
 cols = st.columns(5)
-
 for i, (name, ticker, key) in enumerate(idx_list):
     with cols[i]:
         d = analyze_market_index(ticker)
         if d:
             st.metric(label=name, value=f"{d['price']:.0f}", delta=f"{d['change']:.2f}%")
-            
-            # CALL/PUT SIGNAL BELOW INDEX
             sig = d['opt_sig']
-            if "CALL" in sig:
-                st.markdown(f"<div class='opt-sig-box opt-buy-ce'>{sig}</div>", unsafe_allow_html=True)
-            elif "PUT" in sig:
-                st.markdown(f"<div class='opt-sig-box opt-buy-pe'>{sig}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='opt-sig-box opt-wait'>{sig}</div>", unsafe_allow_html=True)
-
-            if st.button("📉 Chart", key=f"chart_{key}", type="secondary"): 
-                st.session_state[f'show_{key}'] = not st.session_state[f'show_{key}']
+            if "CALL" in sig: st.markdown(f"<div class='opt-sig-box opt-buy-ce'>{sig}</div>", unsafe_allow_html=True)
+            elif "PUT" in sig: st.markdown(f"<div class='opt-sig-box opt-buy-pe'>{sig}</div>", unsafe_allow_html=True)
+            else: st.markdown(f"<div class='opt-sig-box opt-wait'>{sig}</div>", unsafe_allow_html=True)
+            if st.button("📉 Chart", key=f"chart_{key}", type="secondary"): st.session_state[f'show_{key}'] = not st.session_state[f'show_{key}']
         else: st.warning("N/A")
-
 for name, ticker, key in idx_list:
     if st.session_state.get(f'show_{key}', False):
         d = analyze_market_index(ticker)
-        if d: plot_chart(name, d['df'], f"({d['trend']})", is_daily=True)
+        tf_opt = st.radio(f"Timeframe ({name})", ["Daily", "15 Min"], key=f"tf_{key}", horizontal=True)
+        if d: 
+            if tf_opt == "Daily": plot_chart(name, d['df'], f"({d['trend']})", is_daily=True)
+            else: df_15 = yf.Ticker(ticker).history(period="5d", interval="15m"); plot_chart(name, df_15, f"({d['trend']})", is_daily=False)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 3. HEATMAP (RESTORED FULL LIST)
+# 3. HEATMAP
 st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🌡️ Sector Heatmap</div>', unsafe_allow_html=True)
 mood = get_smart_sectors()
@@ -537,18 +513,16 @@ hm_cols = st.columns(8)
 for i, (sec, val) in enumerate(mood.items()):
     with hm_cols[i % 8]:
         st.markdown(f"<div class='sector-box'><span class='sec-name'>{sec}</span><span class='sec-val' style='color:{val['tc']}'>{val['change']}%</span><br></div>", unsafe_allow_html=True)
-        if st.button("📉 Chart", key=f"btn_sec_{i}", type="secondary"):
-            st.session_state['active_sector'] = val['ticker']
-
+        if st.button("📉 Chart", key=f"btn_sec_{i}", type="secondary"): st.session_state['active_sector'] = val['ticker']
 if 'active_sector' in st.session_state:
-    st.info(f"Showing Chart for {st.session_state['active_sector']}")
     try:
         sec_stock = yf.Ticker(st.session_state['active_sector'])
-        sec_df = sec_stock.history(period="1y")
-        plot_chart(st.session_state['active_sector'], sec_df, "(Sector View)", is_daily=True)
-        if st.button("Close Sector Chart", type="primary"):
-            del st.session_state['active_sector']
-            st.rerun()
+        sec_tf = st.radio("Select Timeframe", ["Daily", "15 Min"], key="sec_tf_radio", horizontal=True)
+        p = "1y" if sec_tf == "Daily" else "5d"
+        i = "1d" if sec_tf == "Daily" else "15m"
+        sec_df = sec_stock.history(period=p, interval=i)
+        plot_chart(st.session_state['active_sector'], sec_df, "(Sector View)", is_daily=(sec_tf=="Daily"))
+        if st.button("Close Sector Chart", type="primary"): del st.session_state['active_sector']; st.rerun()
     except: st.error("Sector Chart Data Error")
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -559,7 +533,6 @@ c1, c2 = st.columns([1, 1])
 with c1:
     st.markdown("**Select Source**")
     scan_source = st.radio("S", ["Part 1 (Large)", "Part 2 (Mid)", "Part 3 (Small)", "Custom"], horizontal=True, label_visibility="collapsed")
-
 tickers = []
 if "Part 1" in scan_source: tickers = STOCK_LIST_PART_1
 elif "Part 2" in scan_source: tickers = STOCK_LIST_PART_2
@@ -572,7 +545,6 @@ elif "Custom" in scan_source:
             col = next((c for c in df_up.columns if "SYMBOL" in c.upper()), None)
             if col: tickers = [f"{x.strip()}.NS" if not str(x).endswith(".NS") else x for x in df_up[col].dropna().unique()]
         except: st.error("File Error")
-
 st.markdown("<br>", unsafe_allow_html=True)
 if st.button("🚀 START AI SCANNING", type="primary"):
     if not tickers: st.error("List Empty")
@@ -587,35 +559,19 @@ if st.button("🚀 START AI SCANNING", type="primary"):
         st.session_state['scan_data'] = L_All
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 5. RESULTS (TABS RESTORED)
+# 5. RESULTS
 if 'scan_data' in st.session_state:
     data = st.session_state['scan_data']
     logic_map = {}
     if "Intraday" in scan_mode:
-        logic_map = {
-            "🚀 Day Buy": "F_Day_Buy", 
-            "🐻 Day Sell": "F_Day_Sell", 
-            "⚡ 2 PM Reversal": "F_2PM", 
-            "🟢 Fresh Support": "F_Support",
-            "🔴 Fresh Resistance": "F_Resistance",
-            "🔥 Alerts": "Alert_Trigger"
-        }
+        logic_map = {"🚀 Day Buy": "F_Day_Buy", "🐻 Day Sell": "F_Day_Sell", "⚡ 2 PM Reversal": "F_2PM", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🔥 Alerts": "Alert_Trigger"}
     else:
-        logic_map = {
-            "🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80",
-            "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double",
-            "🟢 Fresh Support": "F_Support",
-            "🔴 Fresh Resistance": "F_Resistance",
-            "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"
-        }
-    
+        logic_map = {"🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
     final_tabs = {}
     for name, key in logic_map.items():
         f = [x for x in data if x.get(key)]
         if f: final_tabs[name] = f
-    
     if len(data) > 0: final_tabs["🔮 Result Magic"] = data 
-    
     if final_tabs:
         st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">🎯 Scan Results</div>', unsafe_allow_html=True)
@@ -623,7 +579,7 @@ if 'scan_data' in st.session_state:
         for i, (name, lst) in enumerate(final_tabs.items()):
             with tabs[i]:
                 if name == "🔮 Result Magic":
-                    st.info("AI checking YoY Financial Growth (Comparing with same quarter last year)...")
+                    st.info("AI checking YoY Financial Growth...")
                     res_list = []
                     for item in lst[:10]:
                         pred = predict_results(item['Symbol'])
@@ -633,11 +589,26 @@ if 'scan_data' in st.session_state:
                     if not res_list: st.warning("No clear result patterns found.")
                     else:
                         df_view = pd.DataFrame(res_list)
-                        st.dataframe(df_view[["Symbol", "Price", "Change", "Result_Text", "All_Tags"]], use_container_width=True)
+                        st.dataframe(
+                            df_view[["Symbol", "Price", "Change", "Result_Text", "All_Tags"]], 
+                            use_container_width=True,
+                            column_config={
+                                "All_Tags": st.column_config.TextColumn("Tags", width="large")
+                            }
+                        )
                 else:
                     df_view = pd.DataFrame(lst)
-                    # SIGNAL QUALITY COLUMN IS FIRST NOW
-                    event = st.dataframe(df_view[["Symbol", "Signal_Quality", "Price", "Change", "SL", "TGT", "All_Tags"]], use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"tbl_{i}")
+                    event = st.dataframe(
+                        df_view[["Symbol", "Signal_Quality", "Price", "Change", "SL", "TGT", "All_Tags"]],
+                        use_container_width=True,
+                        on_select="rerun", 
+                        selection_mode="single-row", 
+                        key=f"tbl_{i}",
+                        column_config={
+                            "All_Tags": st.column_config.TextColumn("Tags", width="large"),
+                            "Signal_Quality": st.column_config.TextColumn("Quality", width="medium")
+                        }
+                    )
                     if len(event.selection.rows) > 0:
                         idx = event.selection.rows[0]; sel_sym = df_view.iloc[idx]['Symbol']
                         sel_item = next((x for x in lst if x['Symbol'] == sel_sym), None)
@@ -649,7 +620,6 @@ if 'scan_data' in st.session_state:
                         with cc2:
                             st.subheader(f"Trade {sel_sym}")
                             if "SUPER" in sel_item['Signal_Quality']: st.success(f"💎 {sel_item['Signal_Quality']}")
-                            
                             if "PE" in sel_item['All_Tags'] and "Support" in sel_item['All_Tags']: st.error("⚠️ CAUTION: Support in Bear Trend!")
                             atr_val = sel_item['ATR']
                             if atr_val > 0:
