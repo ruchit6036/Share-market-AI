@@ -1,8 +1,8 @@
 streamlit
 yfinance
 pandas
-pandas-ta
-numpy
+pandas_ta
+numpy<2.0.0
 scipy
 plotly
 streamlit-gsheets
