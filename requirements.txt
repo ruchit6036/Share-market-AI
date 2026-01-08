@@ -5,6 +5,6 @@ pandas_ta
 numpy
 scipy
 plotly
-gspread
-google-auth
+streamlit-gsheets
 st-gsheets-connection
+requests
