@@ -12,7 +12,7 @@ from datetime import datetime
 
 # --- 1. ADMIN CONFIG (Apni Master Sheet ka link yahan dalein) ---
 # Purana link hatakar ab ye likhein:
-ADMIN_SHEET_URL = st.secrets["admin_url"]
+admin_url = st.secrets["admin_url"]
 import uuid
 from streamlit_javascript import st_javascript
 
