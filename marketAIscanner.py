@@ -7,11 +7,97 @@ from scipy.signal import argrelextrema
 import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import warnings
-import requests  # Telegram ke liye zaroori library
+import requests
 from datetime import datetime
 
-# --- 1. SET YOUR GOOGLE SHEET URL HERE ---
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1LrdWFwe4SFUtT9SjklGstwHUEHjZ0Ko48wdmDtp-h5I/edit?gid=0#gid=0"
+# --- 1. ADMIN CONFIG (Apni Master Sheet ka link yahan dalein) ---
+# Purana link hatakar ab ye likhein:
+ADMIN_SHEET_URL = st.secrets["admin_url"]
+import uuid
+from streamlit_javascript import st_javascript
+
+# --- 1. Machine ID nikalne ka function (Network change hone par nahi badlega) ---
+def get_machine_id():
+    js_code = "navigator.userAgent + window.screen.width + window.screen.height"
+    v = st_javascript(js_code)
+    return v
+
+# --- 2. Updated Verify User Function (Return 3 values to fix ValueError) ---
+def verify_user(u, p):
+    try:
+        conn_admin = st.connection("gsheets", type=GSheetsConnection)
+        admin_df = conn_admin.read(spreadsheet=ADMIN_SHEET_URL, ttl=0)
+        
+        # Data cleaning
+        admin_df['Username'] = admin_df['Username'].astype(str).str.strip()
+        admin_df['Password'] = admin_df['Password'].astype(str).str.strip()
+        
+        user_row = admin_df[(admin_df['Username'] == str(u).strip()) & 
+                            (admin_df['Password'] == str(p).strip())]
+        
+        if not user_row.empty:
+            status = str(user_row.iloc[0]['Status']).strip()
+            user_sheet = user_row.iloc[0]['Sheet_URL']
+            # Admin sheet mein 'Device_ID' column hona zaruri hai
+            saved_device = str(user_row.iloc[0].get('Device_ID', ''))
+
+            if status != "Active":
+                return False, "BLOCKED", None
+            
+            return True, user_sheet, saved_device
+            
+        return False, "INVALID", None
+    except Exception as e:
+        st.error(f"Sheet Error: {e}")
+        return False, "ERROR", None
+
+# --- 3. Fixed Login UI Block ---
+if not st.session_state.get('authenticated', False):
+    st.markdown("<h1 style='text-align: center;'>🔐 Secure Device Login</h1>", unsafe_allow_html=True)
+    
+    # Machine ID screen par dikhane ke liye
+    m_id = get_machine_id()
+    
+    with st.form("secure_login_form"):
+        u_name = st.text_input("Username")
+        u_pass = st.text_input("Password", type="password")
+        submit_auth = st.form_submit_button("Access Software")
+        
+        if submit_auth:
+            # Fix: Ab 3 values unpack ho rahi hain (is_ok, result, saved_id)
+            is_ok, result, saved_id = verify_user(u_name, u_pass)
+            
+            if is_ok:
+                # Registration Logic: Agar sheet mein ID khali hai
+                if not saved_id or saved_id == "nan" or saved_id == "":
+                    st.warning(f"Device not registered. Please send this ID to Admin: `{m_id}`")
+                    # First time login par registration allow karne ke liye niche ki 2 line active karein:
+                    # st.session_state['authenticated'] = True
+                    # st.session_state['personal_sheet_url'] = result
+                
+                # Validation Logic: Agar ID match hoti hai
+                elif str(saved_id).strip() == str(m_id).strip():
+                    st.session_state['authenticated'] = True
+                    st.session_state['personal_sheet_url'] = result
+                    st.rerun()
+                else:
+                    st.error("🚫 Access Denied: Software locked to another device.")
+            elif result == "BLOCKED":
+                st.error("🚫 Your access has been disabled by Admin.")
+            else:
+                st.error("❌ Invalid Username or Password")
+
+    # Display ID for the buyer to copy
+    if m_id:
+        st.info(f"📍 Your Device ID: `{m_id}`")
+        st.caption("Network change hone par ye ID nahi badlegi.")
+    st.stop()
+
+# Purane code ka SHEET_URL ab yahan set hoga
+SHEET_URL = st.session_state.get('personal_sheet_url')
+            
+# Ab SHEET_URL apne aap login se set ho jayega
+SHEET_URL = st.session_state['personal_sheet_url']
 
 # --- 2. SUPPRESS WARNINGS ---
 warnings.filterwarnings('ignore')
@@ -19,12 +105,26 @@ warnings.filterwarnings('ignore')
 # --- CONFIG ---
 st.set_page_config(page_title="Market AI Scanner", layout="wide", page_icon="🧠")
 
-# --- 🎨 UI CSS ---
+# --- 🎨 UI CSS (UPDATED FOR SCROLLING TABS) ---
 st.markdown("""
     <style>
     .stApp {background-color: #f1f5f9;}
     section[data-testid="stSidebar"] {background-color: #ffffff; border-right: 1px solid #e2e8f0;}
     h1, h2, h3, p, label, .stMarkdown {color: #0f172a !important;}
+    
+    /* 🟢 NEW: HORIZONTAL SCROLL FOR TABS */
+    div[data-baseweb="tab-list"] {
+        display: flex;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        overflow-y: hidden;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch; /* Smooth scroll on mobile */
+        scrollbar-width: thin; /* Thin scrollbar for Firefox */
+        padding-bottom: 5px;
+    }
+    
+    /* Cards & Design */
     .dashboard-card {background-color: #ffffff; padding: 25px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 25px;}
     .card-title {font-size: 26px; font-weight: 900; color: #1e293b; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px solid #3b82f6; text-transform: uppercase; letter-spacing: 1px;}
     .sentiment-bar {display: flex; justify-content: center; background: #1e293b; color: white; padding: 15px 25px; border-radius: 10px; margin-bottom: 25px; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
@@ -77,18 +177,15 @@ for idx in ["Nifty", "Sensex", "BankNifty", "FinNifty", "Bankex"]:
 # --- 🔔 TELEGRAM ALERT FUNCTION ---
 def send_telegram_alert(message):
     try:
-        # Streamlit secrets se Token aur Chat ID lena
         bot_token = st.secrets["telegram"]["token"]
         chat_id = st.secrets["telegram"]["chat_id"]
-        
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         params = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
         requests.get(url, params=params)
-    except Exception as e:
-        pass # Agar secrets set nahi hain to error ignore karega
+    except: pass
 
 # ==========================================
-# 📋 STOCK LISTS (Full Lists)
+# 📋 STOCK LISTS
 # ==========================================
 STOCK_LIST_PART_1 = [
     "NIFTYBEES.NS", "BANKBEES.NS", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS",
@@ -104,7 +201,6 @@ STOCK_LIST_PART_1 = [
     "ATGL.NS", "ADANIGREEN.NS", "ADANIPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "TORNTPOWER.NS", "PFC.NS",
     "RECLTD.NS", "IOB.NS", "UNIONBANK.NS", "INDIANB.NS", "UCOBANK.NS", "MAHABANK.NS", "CENTRALBK.NS", "PSB.NS", "SBICARD.NS"
 ]
-
 STOCK_LIST_PART_2 = [
     "BAJAJHLDNG.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS", "LICI.NS", "GICRE.NS", "NIACL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS",
     "M&MFIN.NS", "SHRIRAMFIN.NS", "SUNDARMFIN.NS", "POONAWALLA.NS", "ABCAPITAL.NS", "L&TFH.NS", "PEL.NS", "DELHIVERY.NS", "NYKAA.NS",
@@ -119,7 +215,6 @@ STOCK_LIST_PART_2 = [
     "GAIL.NS", "HINDPETRO.NS", "IOC.NS", "MRPL.NS", "CHENNPETRO.NS", "CUMMINSIND.NS", "THERMAX.NS", "SKFINDIA.NS", "TIMKEN.NS",
     "SCHAEFFLER.NS", "AIAENG.NS", "ELGIEQUIP.NS", "KIRLOSENG.NS", "SUZLON.NS", "INOXWIND.NS", "BEML.NS", "MAZDOCK.NS", "COCHINSHIP.NS"
 ]
-
 STOCK_LIST_PART_3 = [
     "GRSE.NS", "BDL.NS", "ASTRAMICRO.NS", "MTARTECH.NS", "DATAPATTNS.NS", "LALPATHLAB.NS", "METROPOLIS.NS", "SYNGENE.NS", "VIJAYA.NS",
     "KIMS.NS", "RAINBOW.NS", "MEDANTA.NS", "ASTERDM.NS", "NH.NS", "FORTIS.NS", "GLENMARK.NS", "IPCALAB.NS", "JBCHEPHARM.NS",
@@ -226,7 +321,7 @@ def predict_results(symbol):
         except: return "N/A"
     except: return "N/A"
 
-# --- 🆔 INDEX OPTION ANALYZER (EMBEDDED) ---
+# --- 🆔 INDEX OPTION ANALYZER ---
 def get_index_signal(df):
     try:
         if df.empty or len(df) < 30: return "WAIT"
@@ -248,8 +343,8 @@ def get_index_signal(df):
 def analyze_market_index(symbol):
     try:
         idx = yf.Ticker(symbol)
-        df = idx.history(period="1y") # Daily for Chart
-        df_intra = idx.history(period="5d", interval="15m") # Intraday for Option Signal
+        df = idx.history(period="1y") # Daily
+        df_intra = idx.history(period="5d", interval="15m") # Intraday
         
         if df.empty: return None
         curr = df['Close'].iloc[-1]; change = ((curr - df['Close'].iloc[-2]) / df['Close'].iloc[-2]) * 100
@@ -320,10 +415,11 @@ def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, m
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
         fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=20), line=dict(color='#3b82f6', width=1.5), name='SMA 20'))
         
+        # --- FIBONACCI GOLDEN LINES ---
         max_h = df['High'].max(); min_l = df['Low'].min(); diff = max_h - min_l
         if diff > 0:
-            fig.add_hline(y=max_h - (diff * 0.618), line_dash="dot", line_color="#EAB308", annotation_text="Golden 61.8%")
-            fig.add_hline(y=max_h - (diff * 0.5), line_dash="dot", line_color="#EAB308", annotation_text="Golden 50%")
+            fig.add_hline(y=max_h - (diff * 0.618), line_dash="dot", line_color="#EAB308", annotation_text="GOLDEN 61.8%")
+            fig.add_hline(y=max_h - (diff * 0.5), line_dash="dot", line_color="#EAB308", annotation_text="GOLDEN 50%")
             
         if sl_price > 0: fig.add_hline(y=sl_price, line_dash="dash", line_color="red", annotation_text=f"SL: {sl_price:.1f}")
         if tgt_price > 0: fig.add_hline(y=tgt_price, line_dash="dash", line_color="green", annotation_text=f"TGT: {tgt_price:.1f}")
@@ -337,7 +433,7 @@ def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, m
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e: st.error(f"Chart Error: {str(e)}")
 
-# 🔥 OLD LOGIC ANALYZER (WITH SAFE JACKPOT MODE) 🔥
+# 🔥 MAIN ANALYZER 🔥
 def analyze_stock_hybrid(symbol):
     try:
         stock = yf.Ticker(symbol)
@@ -355,7 +451,6 @@ def analyze_stock_hybrid(symbol):
         df_daily['SMA20'] = ta.sma(df_daily['Close'], length=20)
         df_daily['RSI'] = ta.rsi(df_daily['Close'], length=14)
         df_daily['Vol_Avg'] = ta.sma(df_daily['Volume'], length=10)
-        df_daily['EMA20'] = ta.ema(df_daily['Close'], length=20)
         
         adx_df = ta.adx(df_daily['High'], df_daily['Low'], df_daily['Close'], length=14)
         adx_val_d = adx_df[adx_df.columns[0]].iloc[-1] if not adx_df.empty else 0
@@ -402,6 +497,13 @@ def analyze_stock_hybrid(symbol):
             if not df_wk.empty and df_wk['Close'].iloc[-1] > ta.sma(df_wk['Close'], length=20).iloc[-1]: weekly_trend_up = True
         except: pass
 
+        # --- 🏆 GOLDEN LINE LOGIC ---
+        max_h = df_daily['High'].max()
+        min_l = df_daily['Low'].min()
+        diff = max_h - min_l
+        golden_level = max_h - (diff * 0.618)
+        is_at_golden = (abs(curr - golden_level) <= (curr * 0.015)) and (curr > df_daily['Open'].iloc[-1])
+
         vol_today = df_daily['Volume'].iloc[-1]
         vol_avg_10 = df_daily['Vol_Avg'].iloc[-1]
         is_high_volume = (vol_today / vol_avg_10 > 1.5) if vol_avg_10 > 0 else False
@@ -411,7 +513,7 @@ def analyze_stock_hybrid(symbol):
             "F_Jackpot": False, "F_CE_100": False, "F_CE_80": False, "F_PE_100": False, "F_PE_80": False,
             "F_Day_Buy": intra_buy, "F_Day_Sell": intra_sell, "F_2PM": reversal_2pm,
             "F_Swing": False, "F_Double": False, "F_Tech": False, "F_Fund": False, "F_Trend": False,
-            "F_Support": fresh_support, "F_Resistance": fresh_resistance,
+            "F_Support": fresh_support, "F_Resistance": fresh_resistance, "F_Golden": is_at_golden,
             "DF_Daily": df_daily, "DF_Intra": df_intra, "ATR": atr_val, "Weekly": "🟢 UP" if weekly_trend_up else "🔴 DOWN", 
             "Alert_Trigger": False, "SL": sl_fix, "TGT": tgt_fix, "Min_Idx": min_idx, "Max_Idx": max_idx
         }
@@ -421,7 +523,6 @@ def analyze_stock_hybrid(symbol):
         pe_ratio = info.get('trailingPE', 100); roe = info.get('returnOnEquity', 0)
         is_fund = (0 < pe_ratio < 60 and roe > 0.12); is_tech = (curr > sma200 and rsi_d > 55)
 
-        # 🛑 UPDATED JACKPOT LOGIC (Added RSI < 70 Safety Check)
         if is_fund and is_tech and vol_blast and weekly_trend_up and (rsi_d < 70): res["F_Jackpot"] = True
         
         if st_dir_d == 1 and rsi_d > 60 and adx_val_d > 25 and weekly_trend_up: res['F_CE_100'] = True
@@ -443,6 +544,7 @@ def analyze_stock_hybrid(symbol):
         elif res['F_PE_100'] and is_high_volume:
             signal_quality = "⚡ SUPER STRONG PE"
             send_telegram_alert(f"🐻 ALERT: {symbol} is SUPER STRONG PE!\nPrice: {curr}\nRSI: {rsi_d:.1f}\nVol: High")
+        elif is_at_golden: signal_quality = "🏆 Golden Support"
         elif res['F_CE_100'] or res['F_CE_80']: signal_quality = "✅ Strong CE"
         elif res['F_PE_100'] or res['F_PE_80']: signal_quality = "🔻 Strong PE"
         elif fresh_support: signal_quality = "🟢 Support Buy"
@@ -452,6 +554,7 @@ def analyze_stock_hybrid(symbol):
         res["Signal_Quality"] = signal_quality
         active_tags = []
         if res["F_Jackpot"]: active_tags.append("🏆 Jackpot")
+        if res["F_Golden"]: active_tags.append("🏆 Golden Dip")
         if res["F_CE_100"]: active_tags.append("🚀 CE 100%")
         if res["F_PE_100"]: active_tags.append("🐻 PE 100%")
         if res["F_Support"]: active_tags.append("🟢 Support")
@@ -566,7 +669,7 @@ if 'scan_data' in st.session_state:
     if "Intraday" in scan_mode:
         logic_map = {"🚀 Day Buy": "F_Day_Buy", "🐻 Day Sell": "F_Day_Sell", "⚡ 2 PM Reversal": "F_2PM", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🔥 Alerts": "Alert_Trigger"}
     else:
-        logic_map = {"🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
+        logic_map = {"🏆 Golden Line": "F_Golden", "🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
     final_tabs = {}
     for name, key in logic_map.items():
         f = [x for x in data if x.get(key)]
@@ -579,13 +682,25 @@ if 'scan_data' in st.session_state:
         for i, (name, lst) in enumerate(final_tabs.items()):
             with tabs[i]:
                 if name == "🔮 Result Magic":
-                    st.info("AI checking YoY Financial Growth...")
+                    st.info(f"AI checking YoY Financial Growth for {len(lst)} stocks... (This may take time)")
                     res_list = []
-                    for item in lst[:10]:
+                    
+                    # 🟢 PROGRESS BAR ADDED
+                    progress_text = "Financial Scan in progress. Please wait."
+                    my_bar = st.progress(0, text=progress_text)
+                    
+                    for idx, item in enumerate(lst): # 🟢 REMOVED [:10] LIMIT
                         pred = predict_results(item['Symbol'])
                         if "Growth" in pred or "Positive" in pred or "Weak" in pred:
                             item['Result_Text'] = pred
                             res_list.append(item)
+                        
+                        # Update progress
+                        progress_percent = (idx + 1) / len(lst)
+                        my_bar.progress(progress_percent, text=f"Checking {item['Symbol']} ({idx+1}/{len(lst)})")
+                        
+                    my_bar.empty()
+                    
                     if not res_list: st.warning("No clear result patterns found.")
                     else:
                         df_view = pd.DataFrame(res_list)
@@ -621,6 +736,7 @@ if 'scan_data' in st.session_state:
                             st.subheader(f"Trade {sel_sym}")
                             if "SUPER" in sel_item['Signal_Quality']: st.success(f"💎 {sel_item['Signal_Quality']}")
                             if "PE" in sel_item['All_Tags'] and "Support" in sel_item['All_Tags']: st.error("⚠️ CAUTION: Support in Bear Trend!")
+                            if "Golden" in sel_item['All_Tags']: st.success("⭐ GOLDEN OPPORTUNITY: Buying at 61.8% Retracement!")
                             atr_val = sel_item['ATR']
                             if atr_val > 0:
                                 dyn_sl = sel_item['Price'] - (atr_val * sl_multiplier)
