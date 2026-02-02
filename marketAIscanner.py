@@ -9,26 +9,32 @@ from streamlit_gsheets import GSheetsConnection
 import warnings
 import requests
 from datetime import datetime
-
-# --- 1. ADMIN CONFIG (Apni Master Sheet ka link yahan dalein) ---
-# Purana link hatakar ab ye likhein:
-ADMIN_SHEET_URL = st.secrets["admin_url"]
 import uuid
 from streamlit_javascript import st_javascript
 
-# --- 1. Machine ID nikalne ka function (Network change hone par nahi badlega) ---
+# --- CONFIG MUST BE FIRST ---
+st.set_page_config(page_title="Market AI Scanner", layout="wide", page_icon="🧠")
+
+# --- 1. SECURITY & LOGIN SETUP ---
+# Admin Sheet URL from Secrets
+try:
+    ADMIN_SHEET_URL = st.secrets["admin_url"]
+except:
+    st.error("🚨 Error: 'admin_url' not found in Secrets. Please add it in Streamlit Dashboard.")
+    st.stop()
+
+# Machine ID Function
 def get_machine_id():
     js_code = "navigator.userAgent + window.screen.width + window.screen.height"
     v = st_javascript(js_code)
     return v
 
-# --- 2. Updated Verify User Function (Return 3 values to fix ValueError) ---
+# Verify User Function
 def verify_user(u, p):
     try:
         conn_admin = st.connection("gsheets", type=GSheetsConnection)
         admin_df = conn_admin.read(spreadsheet=ADMIN_SHEET_URL, ttl=0)
         
-        # Data cleaning
         admin_df['Username'] = admin_df['Username'].astype(str).str.strip()
         admin_df['Password'] = admin_df['Password'].astype(str).str.strip()
         
@@ -38,7 +44,6 @@ def verify_user(u, p):
         if not user_row.empty:
             status = str(user_row.iloc[0]['Status']).strip()
             user_sheet = user_row.iloc[0]['Sheet_URL']
-            # Admin sheet mein 'Device_ID' column hona zaruri hai
             saved_device = str(user_row.iloc[0].get('Device_ID', ''))
 
             if status != "Active":
@@ -48,14 +53,13 @@ def verify_user(u, p):
             
         return False, "INVALID", None
     except Exception as e:
-        st.error(f"Sheet Error: {e}")
+        st.error(f"Login Error: {e}")
         return False, "ERROR", None
 
-# --- 3. Fixed Login UI Block ---
+# --- LOGIN UI BLOCK ---
 if not st.session_state.get('authenticated', False):
-    st.markdown("<h1 style='text-align: center;'>🔐 Secure Device Login</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔐 Market Master Login</h1>", unsafe_allow_html=True)
     
-    # Machine ID screen par dikhane ke liye
     m_id = get_machine_id()
     
     with st.form("secure_login_form"):
@@ -64,63 +68,52 @@ if not st.session_state.get('authenticated', False):
         submit_auth = st.form_submit_button("Access Software")
         
         if submit_auth:
-            # Fix: Ab 3 values unpack ho rahi hain (is_ok, result, saved_id)
             is_ok, result, saved_id = verify_user(u_name, u_pass)
             
             if is_ok:
-                # Registration Logic: Agar sheet mein ID khali hai
+                # Registration Logic
                 if not saved_id or saved_id == "nan" or saved_id == "":
-                    st.warning(f"Device not registered. Please send this ID to Admin: `{m_id}`")
-                    # First time login par registration allow karne ke liye niche ki 2 line active karein:
-                    # st.session_state['authenticated'] = True
-                    # st.session_state['personal_sheet_url'] = result
-                
-                # Validation Logic: Agar ID match hoti hai
+                    st.warning(f"Device Not Registered! Send this ID to Admin: `{m_id}`")
+                # Validation Logic
                 elif str(saved_id).strip() == str(m_id).strip():
                     st.session_state['authenticated'] = True
                     st.session_state['personal_sheet_url'] = result
+                    st.success("Login Successful!")
                     st.rerun()
                 else:
-                    st.error("🚫 Access Denied: Software locked to another device.")
+                    st.error("🚫 Access Denied: Device ID Mismatch.")
             elif result == "BLOCKED":
-                st.error("🚫 Your access has been disabled by Admin.")
+                st.error("🚫 Account Blocked by Admin.")
             else:
                 st.error("❌ Invalid Username or Password")
 
-    # Display ID for the buyer to copy
     if m_id:
         st.info(f"📍 Your Device ID: `{m_id}`")
-        st.caption("Network change hone par ye ID nahi badlegi.")
     st.stop()
 
-# Purane code ka SHEET_URL ab yahan set hoga
-SHEET_URL = st.session_state.get('personal_sheet_url')
-            
-# Ab SHEET_URL apne aap login se set ho jayega
+# --- MAIN APP STARTS HERE ---
+# Retrieve Sheet URL from Session
 SHEET_URL = st.session_state['personal_sheet_url']
 
 # --- 2. SUPPRESS WARNINGS ---
 warnings.filterwarnings('ignore')
 
-# --- CONFIG ---
-st.set_page_config(page_title="Market AI Scanner", layout="wide", page_icon="🧠")
-
-# --- 🎨 UI CSS (UPDATED FOR SCROLLING TABS) ---
+# --- 🎨 UI CSS (Original from latest.py) ---
 st.markdown("""
     <style>
     .stApp {background-color: #f1f5f9;}
     section[data-testid="stSidebar"] {background-color: #ffffff; border-right: 1px solid #e2e8f0;}
     h1, h2, h3, p, label, .stMarkdown {color: #0f172a !important;}
     
-    /* 🟢 NEW: HORIZONTAL SCROLL FOR TABS */
+    /* 🟢 HORIZONTAL SCROLL FOR TABS */
     div[data-baseweb="tab-list"] {
         display: flex;
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
         overflow-y: hidden;
         white-space: nowrap;
-        -webkit-overflow-scrolling: touch; /* Smooth scroll on mobile */
-        scrollbar-width: thin; /* Thin scrollbar for Firefox */
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
         padding-bottom: 5px;
     }
     
@@ -187,49 +180,9 @@ def send_telegram_alert(message):
 # ==========================================
 # 📋 STOCK LISTS
 # ==========================================
-STOCK_LIST_PART_1 = [
-    "NIFTYBEES.NS", "BANKBEES.NS", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS",
-    "TATAMOTORS.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS", "ULTRACEMCO.NS", "ADANIENT.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "KOTAKBANK.NS",
-    "WIPRO.NS", "HCLTECH.NS", "TATASTEEL.NS", "POWERGRID.NS", "NTPC.NS", "ONGC.NS", "M&M.NS", "COALINDIA.NS", "JSWSTEEL.NS", "BPCL.NS",
-    "EICHERMOT.NS", "DIVISLAB.NS", "DRREDDY.NS", "CIPLA.NS", "ASIANPAINT.NS", "BRITANNIA.NS", "NESTLEIND.NS", "DLF.NS", "ZOMATO.NS",
-    "PAYTM.NS", "HAL.NS", "BEL.NS", "IRCTC.NS", "VBL.NS", "JIOFIN.NS", "INDIGO.NS", "DMART.NS", "ADANIPORTS.NS", "CHOLAFIN.NS",
-    "BANKBARODA.NS", "PNB.NS", "CANBK.NS", "IDFCFIRSTB.NS", "BHEL.NS", "SAIL.NS", "VEDL.NS", "HAVELLS.NS", "SIEMENS.NS", "ABB.NS",
-    "ZEEL.NS", "ASHOKLEY.NS", "TVSMOTOR.NS", "MOTHERSON.NS", "MRF.NS", "BOSCHLTD.NS", "PIDILITIND.NS", "SHREECEM.NS", "ACC.NS",
-    "AMBUJACEM.NS", "INDUSINDBK.NS", "NAUKRI.NS", "TRENT.NS", "COLPAL.NS", "DABUR.NS", "GODREJCP.NS", "BERGEPAINT.NS", "MARICO.NS",
-    "BAJAJ-AUTO.NS", "HEROMOTOCO.NS", "ALKEM.NS", "LUPIN.NS", "AUROPHARMA.NS", "BIOCON.NS", "TORNTPHARM.NS", "MFSL.NS", "MAXHEALTH.NS",
-    "APOLLOHOSP.NS", "JUBLFOOD.NS", "DEVYANI.NS", "PIIND.NS", "UPL.NS", "SRF.NS", "NAVINFLUOR.NS", "AARTIIND.NS", "DEEPAKNTR.NS",
-    "ATGL.NS", "ADANIGREEN.NS", "ADANIPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "TORNTPOWER.NS", "PFC.NS",
-    "RECLTD.NS", "IOB.NS", "UNIONBANK.NS", "INDIANB.NS", "UCOBANK.NS", "MAHABANK.NS", "CENTRALBK.NS", "PSB.NS", "SBICARD.NS"
-]
-STOCK_LIST_PART_2 = [
-    "BAJAJHLDNG.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS", "LICI.NS", "GICRE.NS", "NIACL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS",
-    "M&MFIN.NS", "SHRIRAMFIN.NS", "SUNDARMFIN.NS", "POONAWALLA.NS", "ABCAPITAL.NS", "L&TFH.NS", "PEL.NS", "DELHIVERY.NS", "NYKAA.NS",
-    "POLICYBZR.NS", "IDEA.NS", "INDUSTOWER.NS", "TATACOMM.NS", "PERSISTENT.NS", "LTIM.NS", "KPITTECH.NS", "COFORGE.NS", "MPHASIS.NS",
-    "LTTS.NS", "TATAELXSI.NS", "ORACLEFIN.NS", "CYIENT.NS", "ZENSARTECH.NS", "SONACOMS.NS", "TIINDIA.NS", "UNO.NS", "PRESTIGE.NS",
-    "OBEROIRLTY.NS", "PHOENIXLTD.NS", "BRIGADE.NS", "SOBHA.NS", "GODREJPROP.NS", "RVNL.NS", "IRCON.NS", "RITES.NS", "RAILTEL.NS",
-    "TITAGARH.NS", "JINDALSTEL.NS", "HINDALCO.NS", "NMDC.NS", "NATIONALUM.NS", "HINDCOPPER.NS", "APLAPOLLO.NS", "RATNAMANI.NS",
-    "WELCORP.NS", "JSL.NS", "VOLTAS.NS", "BLUESTARCO.NS", "KAJARIACER.NS", "CERA.NS", "ASTRAL.NS", "POLYCAB.NS", "KEI.NS", "DIXON.NS",
-    "CROMPTON.NS", "WHIRLPOOL.NS", "BATAINDIA.NS", "RELAXO.NS", "PAGEIND.NS", "KPRMILL.NS", "TRIDENT.NS", "RAYMOND.NS", "ABFRL.NS",
-    "MANYAVAR.NS", "METROBRAND.NS", "BIKAJI.NS", "VBL.NS", "AWL.NS", "PATANJALI.NS", "EMAMILTD.NS", "JYOTHYLAB.NS", "FLUOROCHEM.NS",
-    "LINDEINDIA.NS", "SOLARINDS.NS", "CASTROLIND.NS", "OIL.NS", "PETRONET.NS", "GSPL.NS", "IGL.NS", "MGL.NS", "GUJGASLTD.NS",
-    "GAIL.NS", "HINDPETRO.NS", "IOC.NS", "MRPL.NS", "CHENNPETRO.NS", "CUMMINSIND.NS", "THERMAX.NS", "SKFINDIA.NS", "TIMKEN.NS",
-    "SCHAEFFLER.NS", "AIAENG.NS", "ELGIEQUIP.NS", "KIRLOSENG.NS", "SUZLON.NS", "INOXWIND.NS", "BEML.NS", "MAZDOCK.NS", "COCHINSHIP.NS"
-]
-STOCK_LIST_PART_3 = [
-    "GRSE.NS", "BDL.NS", "ASTRAMICRO.NS", "MTARTECH.NS", "DATAPATTNS.NS", "LALPATHLAB.NS", "METROPOLIS.NS", "SYNGENE.NS", "VIJAYA.NS",
-    "KIMS.NS", "RAINBOW.NS", "MEDANTA.NS", "ASTERDM.NS", "NH.NS", "FORTIS.NS", "GLENMARK.NS", "IPCALAB.NS", "JBCHEPHARM.NS",
-    "AJANTPHARM.NS", "NATCOPHARM.NS", "PFIZER.NS", "SANOFI.NS", "ABBOTINDIA.NS", "GLAXO.NS", "ASTRAZEN.NS", "ERIS.NS", "GRANULES.NS",
-    "LAURUSLABS.NS", "FSL.NS", "REDINGTON.NS", "BSOFT.NS", "MASTEK.NS", "INTELLECT.NS", "TANLA.NS", "ROUTE.NS", "JUSTDIAL.NS",
-    "AFFLE.NS", "HAPPSTMNDS.NS", "LATENTVIEW.NS", "MAPMYINDIA.NS", "RATEGAIN.NS", "NAZARA.NS", "EASEMYTRIP.NS", "CARTRADE.NS",
-    "PBFINTECH.NS", "SAPPHIRE.NS", "RBA.NS", "WESTLIFE.NS", "CHALET.NS", "LEMONTREE.NS", "EIHOTEL.NS", "IHCL.NS", "DELTACO.NS",
-    "PVRINOX.NS", "SAREGAMA.NS", "SUNTV.NS", "NETWORK18.NS", "TV18BRDCST.NS", "HATHWAY.NS", "DEN.NS", "DISHMAN.NS", "GTPL.NS",
-    "UJJIVANSFB.NS", "EQUITASBNK.NS", "AUBANK.NS", "BANDHANBNK.NS", "FEDERALBNK.NS", "RBLBANK.NS", "CSBBANK.NS", "KARURVYSYA.NS",
-    "CUB.NS", "DCBBANK.NS", "SOUTHBANK.NS", "J&KBANK.NS", "MAHSEAMLES.NS", "EPL.NS", "POLYPLEX.NS", "UFRLEX.NS", "SUPREMEIND.NS",
-    "FINPIPE.NS", "PRINCEPIPE.NS", "RESPONIND.NS", "CENTURYPLY.NS", "GREENPANEL.NS", "GREENPLY.NS", "KAJARIACER.NS", "SOMANYCERA.NS",
-    "ASAHIINDIA.NS", "LAOPALA.NS", "BORORENEW.NS", "VIPIND.NS", "SAFARI.NS", "TTKPRESTIG.NS", "HAWKINS.NS", "SYMPHONY.NS",
-    "ORIENTELEC.NS", "IFBIND.NS", "VGUARD.NS", "AMBER.NS", "PGHH.NS", "GILLETTE.NS", "AKZOINDIA.NS", "KANSAINER.NS", "INDIGOPNTS.NS",
-    "SIRCA.NS", "SHALPAINTS.NS", "GARFIBRES.NS", "LUXIND.NS", "RUPA.NS", "DOLLAR.NS", "TCNSBRANDS.NS", "GOKEX.NS", "SWANENERGY.NS"
-]
+STOCK_LIST_PART_1 = ["NIFTYBEES.NS", "BANKBEES.NS", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "L&T.NS", "HINDUNILVR.NS", "TATAMOTORS.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS", "ULTRACEMCO.NS", "ADANIENT.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "KOTAKBANK.NS", "WIPRO.NS", "HCLTECH.NS", "TATASTEEL.NS", "POWERGRID.NS", "NTPC.NS", "ONGC.NS", "M&M.NS", "COALINDIA.NS", "JSWSTEEL.NS", "BPCL.NS", "EICHERMOT.NS", "DIVISLAB.NS", "DRREDDY.NS", "CIPLA.NS", "ASIANPAINT.NS", "BRITANNIA.NS", "NESTLEIND.NS", "DLF.NS", "ZOMATO.NS", "PAYTM.NS", "HAL.NS", "BEL.NS", "IRCTC.NS", "VBL.NS", "JIOFIN.NS", "INDIGO.NS", "DMART.NS", "ADANIPORTS.NS", "CHOLAFIN.NS", "BANKBARODA.NS", "PNB.NS", "CANBK.NS", "IDFCFIRSTB.NS", "BHEL.NS", "SAIL.NS", "VEDL.NS", "HAVELLS.NS", "SIEMENS.NS", "ABB.NS", "ZEEL.NS", "ASHOKLEY.NS", "TVSMOTOR.NS", "MOTHERSON.NS", "MRF.NS", "BOSCHLTD.NS", "PIDILITIND.NS", "SHREECEM.NS", "ACC.NS", "AMBUJACEM.NS", "INDUSINDBK.NS", "NAUKRI.NS", "TRENT.NS", "COLPAL.NS", "DABUR.NS", "GODREJCP.NS", "BERGEPAINT.NS", "MARICO.NS", "BAJAJ-AUTO.NS", "HEROMOTOCO.NS", "ALKEM.NS", "LUPIN.NS", "AUROPHARMA.NS", "BIOCON.NS", "TORNTPHARM.NS", "MFSL.NS", "MAXHEALTH.NS", "APOLLOHOSP.NS", "JUBLFOOD.NS", "DEVYANI.NS", "PIIND.NS", "UPL.NS", "SRF.NS", "NAVINFLUOR.NS", "AARTIIND.NS", "DEEPAKNTR.NS", "ATGL.NS", "ADANIGREEN.NS", "ADANIPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "TORNTPOWER.NS", "PFC.NS", "RECLTD.NS", "IOB.NS", "UNIONBANK.NS", "INDIANB.NS", "UCOBANK.NS", "MAHABANK.NS", "CENTRALBK.NS", "PSB.NS", "SBICARD.NS"]
+STOCK_LIST_PART_2 = ["BAJAJHLDNG.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS", "LICI.NS", "GICRE.NS", "NIACL.NS", "MUTHOOTFIN.NS", "MANAPPURAM.NS", "M&MFIN.NS", "SHRIRAMFIN.NS", "SUNDARMFIN.NS", "POONAWALLA.NS", "ABCAPITAL.NS", "L&TFH.NS", "PEL.NS", "DELHIVERY.NS", "NYKAA.NS", "POLICYBZR.NS", "IDEA.NS", "INDUSTOWER.NS", "TATACOMM.NS", "PERSISTENT.NS", "LTIM.NS", "KPITTECH.NS", "COFORGE.NS", "MPHASIS.NS", "LTTS.NS", "TATAELXSI.NS", "ORACLEFIN.NS", "CYIENT.NS", "ZENSARTECH.NS", "SONACOMS.NS", "TIINDIA.NS", "UNO.NS", "PRESTIGE.NS", "OBEROIRLTY.NS", "PHOENIXLTD.NS", "BRIGADE.NS", "SOBHA.NS", "GODREJPROP.NS", "RVNL.NS", "IRCON.NS", "RITES.NS", "RAILTEL.NS", "TITAGARH.NS", "JINDALSTEL.NS", "HINDALCO.NS", "NMDC.NS", "NATIONALUM.NS", "HINDCOPPER.NS", "APLAPOLLO.NS", "RATNAMANI.NS", "WELCORP.NS", "JSL.NS", "VOLTAS.NS", "BLUESTARCO.NS", "KAJARIACER.NS", "CERA.NS", "ASTRAL.NS", "POLYCAB.NS", "KEI.NS", "DIXON.NS", "CROMPTON.NS", "WHIRLPOOL.NS", "BATAINDIA.NS", "RELAXO.NS", "PAGEIND.NS", "KPRMILL.NS", "TRIDENT.NS", "RAYMOND.NS", "ABFRL.NS", "MANYAVAR.NS", "METROBRAND.NS", "BIKAJI.NS", "VBL.NS", "AWL.NS", "PATANJALI.NS", "EMAMILTD.NS", "JYOTHYLAB.NS", "FLUOROCHEM.NS", "LINDEINDIA.NS", "SOLARINDS.NS", "CASTROLIND.NS", "OIL.NS", "PETRONET.NS", "GSPL.NS", "IGL.NS", "MGL.NS", "GUJGASLTD.NS", "GAIL.NS", "HINDPETRO.NS", "IOC.NS", "MRPL.NS", "CHENNPETRO.NS", "CUMMINSIND.NS", "THERMAX.NS", "SKFINDIA.NS", "TIMKEN.NS", "SCHAEFFLER.NS", "AIAENG.NS", "ELGIEQUIP.NS", "KIRLOSENG.NS", "SUZLON.NS", "INOXWIND.NS", "BEML.NS", "MAZDOCK.NS", "COCHINSHIP.NS"]
+STOCK_LIST_PART_3 = ["GRSE.NS", "BDL.NS", "ASTRAMICRO.NS", "MTARTECH.NS", "DATAPATTNS.NS", "LALPATHLAB.NS", "METROPOLIS.NS", "SYNGENE.NS", "VIJAYA.NS", "KIMS.NS", "RAINBOW.NS", "MEDANTA.NS", "ASTERDM.NS", "NH.NS", "FORTIS.NS", "GLENMARK.NS", "IPCALAB.NS", "JBCHEPHARM.NS", "AJANTPHARM.NS", "NATCOPHARM.NS", "PFIZER.NS", "SANOFI.NS", "ABBOTINDIA.NS", "GLAXO.NS", "ASTRAZEN.NS", "ERIS.NS", "GRANULES.NS", "LAURUSLABS.NS", "FSL.NS", "REDINGTON.NS", "BSOFT.NS", "MASTEK.NS", "INTELLECT.NS", "TANLA.NS", "ROUTE.NS", "JUSTDIAL.NS", "AFFLE.NS", "HAPPSTMNDS.NS", "LATENTVIEW.NS", "MAPMYINDIA.NS", "RATEGAIN.NS", "NAZARA.NS", "EASEMYTRIP.NS", "CARTRADE.NS", "PBFINTECH.NS", "SAPPHIRE.NS", "RBA.NS", "WESTLIFE.NS", "CHALET.NS", "LEMONTREE.NS", "EIHOTEL.NS", "IHCL.NS", "DELTACO.NS", "PVRINOX.NS", "SAREGAMA.NS", "SUNTV.NS", "NETWORK18.NS", "TV18BRDCST.NS", "HATHWAY.NS", "DEN.NS", "DISHMAN.NS", "GTPL.NS", "UJJIVANSFB.NS", "EQUITASBNK.NS", "AUBANK.NS", "BANDHANBNK.NS", "FEDERALBNK.NS", "RBLBANK.NS", "CSBBANK.NS", "KARURVYSYA.NS", "CUB.NS", "DCBBANK.NS", "SOUTHBANK.NS", "J&KBANK.NS", "MAHSEAMLES.NS", "EPL.NS", "POLYPLEX.NS", "UFRLEX.NS", "SUPREMEIND.NS", "FINPIPE.NS", "PRINCEPIPE.NS", "RESPONIND.NS", "CENTURYPLY.NS", "GREENPANEL.NS", "GREENPLY.NS", "KAJARIACER.NS", "SOMANYCERA.NS", "ASAHIINDIA.NS", "LAOPALA.NS", "BORORENEW.NS", "VIPIND.NS", "SAFARI.NS", "TTKPRESTIG.NS", "HAWKINS.NS", "SYMPHONY.NS", "ORIENTELEC.NS", "IFBIND.NS", "VGUARD.NS", "AMBER.NS", "PGHH.NS", "GILLETTE.NS", "AKZOINDIA.NS", "KANSAINER.NS", "INDIGOPNTS.NS", "SIRCA.NS", "SHALPAINTS.NS", "GARFIBRES.NS", "LUXIND.NS", "RUPA.NS", "DOLLAR.NS", "TCNSBRANDS.NS", "GOKEX.NS", "SWANENERGY.NS"]
 
 def buy_stock(symbol, qty, price, category):
     data = load_data_from_sheets() 
@@ -388,7 +341,7 @@ def get_market_mood_strip():
         return global_mood
     except: return "Neutral"
 
-# --- PLOT CHART (FIBONACCI + S/R) ---
+# --- PLOT CHART (FIBONACCI + S/R + SMA + SAR) ---
 def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, max_idx=None, is_daily=True):
     try:
         if df is None or df.empty:
@@ -413,8 +366,20 @@ def plot_chart(symbol, df, title_extra="", current_atr_mult=2.0, min_idx=None, m
 
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
-        fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=20), line=dict(color='#3b82f6', width=1.5), name='SMA 20'))
         
+        # 🟢 ADDED: SMA 20, 50, 200 (Taaki chart adhura na lage)
+        fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=20), line=dict(color='#3b82f6', width=1.5), name='SMA 20'))
+        fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=50), line=dict(color='orange', width=1.5), name='SMA 50'))
+        fig.add_trace(go.Scatter(x=df.index, y=ta.sma(df['Close'], length=200), line=dict(color='purple', width=1.5), name='SMA 200'))
+
+        # 🟢 ADDED: PARABOLIC SAR TRACE
+        try:
+            psar = ta.psar(df['High'], df['Low'], df['Close'])
+            if psar is not None:
+                sar_vals = psar.iloc[:, 0].fillna(psar.iloc[:, 1]) 
+                fig.add_trace(go.Scatter(x=df.index, y=sar_vals, mode='markers', marker=dict(color='black', size=4), name='SAR'))
+        except: pass
+
         # --- FIBONACCI GOLDEN LINES ---
         max_h = df['High'].max(); min_l = df['Low'].min(); diff = max_h - min_l
         if diff > 0:
@@ -459,6 +424,13 @@ def analyze_stock_hybrid(symbol):
             st_data_d = ta.supertrend(df_daily['High'], df_daily['Low'], df_daily['Close'], length=7, multiplier=3)
             st_dir_d = st_data_d.iloc[-1, 1]
         except: st_dir_d = 0
+
+        # 🟢 ADDED: SAR CALCULATION
+        try:
+            psar = ta.psar(df_daily['High'], df_daily['Low'], df_daily['Close'])
+            sar_val = psar.iloc[-1, 0] if not pd.isna(psar.iloc[-1, 0]) else psar.iloc[-1, 1]
+            is_sar_bullish = curr > sar_val
+        except: is_sar_bullish = False
 
         intra_buy = False; intra_sell = False; reversal_2pm = False
         if df_intra is not None and len(df_intra) > 20:
@@ -514,6 +486,7 @@ def analyze_stock_hybrid(symbol):
             "F_Day_Buy": intra_buy, "F_Day_Sell": intra_sell, "F_2PM": reversal_2pm,
             "F_Swing": False, "F_Double": False, "F_Tech": False, "F_Fund": False, "F_Trend": False,
             "F_Support": fresh_support, "F_Resistance": fresh_resistance, "F_Golden": is_at_golden,
+            "F_SAR": is_sar_bullish, # 🟢 ADDED SAR FLAG
             "DF_Daily": df_daily, "DF_Intra": df_intra, "ATR": atr_val, "Weekly": "🟢 UP" if weekly_trend_up else "🔴 DOWN", 
             "Alert_Trigger": False, "SL": sl_fix, "TGT": tgt_fix, "Min_Idx": min_idx, "Max_Idx": max_idx
         }
@@ -545,6 +518,7 @@ def analyze_stock_hybrid(symbol):
             signal_quality = "⚡ SUPER STRONG PE"
             send_telegram_alert(f"🐻 ALERT: {symbol} is SUPER STRONG PE!\nPrice: {curr}\nRSI: {rsi_d:.1f}\nVol: High")
         elif is_at_golden: signal_quality = "🏆 Golden Support"
+        elif is_sar_bullish: signal_quality = "🟢 SAR Bull" # 🟢 SAR SIGNAL
         elif res['F_CE_100'] or res['F_CE_80']: signal_quality = "✅ Strong CE"
         elif res['F_PE_100'] or res['F_PE_80']: signal_quality = "🔻 Strong PE"
         elif fresh_support: signal_quality = "🟢 Support Buy"
@@ -555,6 +529,7 @@ def analyze_stock_hybrid(symbol):
         active_tags = []
         if res["F_Jackpot"]: active_tags.append("🏆 Jackpot")
         if res["F_Golden"]: active_tags.append("🏆 Golden Dip")
+        if res["F_SAR"]: active_tags.append("🟢 SAR Bull") # 🟢 TAG ADDED
         if res["F_CE_100"]: active_tags.append("🚀 CE 100%")
         if res["F_PE_100"]: active_tags.append("🐻 PE 100%")
         if res["F_Support"]: active_tags.append("🟢 Support")
@@ -667,9 +642,10 @@ if 'scan_data' in st.session_state:
     data = st.session_state['scan_data']
     logic_map = {}
     if "Intraday" in scan_mode:
-        logic_map = {"🚀 Day Buy": "F_Day_Buy", "🐻 Day Sell": "F_Day_Sell", "⚡ 2 PM Reversal": "F_2PM", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🔥 Alerts": "Alert_Trigger"}
+        logic_map = {"🚀 Day Buy": "F_Day_Buy", "🐻 Day Sell": "F_Day_Sell", "🟢 Parabolic SAR": "F_SAR", "⚡ 2 PM Reversal": "F_2PM", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🔥 Alerts": "Alert_Trigger"}
     else:
-        logic_map = {"🏆 Golden Line": "F_Golden", "🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
+        # 🟢 ADDED: "🟢 Parabolic SAR" in Logic Map
+        logic_map = {"🏆 Golden Line": "F_Golden", "🟢 Parabolic SAR": "F_SAR", "🚀 CE (100%)": "F_CE_100", "⚡ CE (80%)": "F_CE_80", "🐻 PE (100%)": "F_PE_100", "📉 PE (80%)": "F_PE_80", "🏆 Jackpot": "F_Jackpot", "🚀 Swing": "F_Swing", "🥈 Double": "F_Double", "🟢 Fresh Support": "F_Support", "🔴 Fresh Resistance": "F_Resistance", "🌊 Trend": "F_Trend", "📈 Tech": "F_Tech", "💎 Fund": "F_Fund", "🔥 Alerts": "Alert_Trigger"}
     final_tabs = {}
     for name, key in logic_map.items():
         f = [x for x in data if x.get(key)]
@@ -685,17 +661,15 @@ if 'scan_data' in st.session_state:
                     st.info(f"AI checking YoY Financial Growth for {len(lst)} stocks... (This may take time)")
                     res_list = []
                     
-                    # 🟢 PROGRESS BAR ADDED
                     progress_text = "Financial Scan in progress. Please wait."
                     my_bar = st.progress(0, text=progress_text)
                     
-                    for idx, item in enumerate(lst): # 🟢 REMOVED [:10] LIMIT
+                    for idx, item in enumerate(lst):
                         pred = predict_results(item['Symbol'])
                         if "Growth" in pred or "Positive" in pred or "Weak" in pred:
                             item['Result_Text'] = pred
                             res_list.append(item)
                         
-                        # Update progress
                         progress_percent = (idx + 1) / len(lst)
                         my_bar.progress(progress_percent, text=f"Checking {item['Symbol']} ({idx+1}/{len(lst)})")
                         
